@@ -280,10 +280,21 @@ class PhysicsEngine(EngineBase):
 
         """
         self.initialize_physics_list()
+        self.initialize_dna_physics_regions()
         self.initialize_g4_em_parameters()
         self.initialize_user_limits_physics()
         self.initialize_physics_biasing()
         self.initialize_parallel_world_physics()
+
+    def initialize_dna_physics_regions(self):
+        if not any(
+            region.dna_em_physics is not None
+            for region in self.physics_manager.regions.values()
+        ):
+            return
+        self.g4_physics_list.RegisterPhysics(
+            g4.G4EmDNAPhysicsActivator(self.physics_manager.simulation.g4_verbose_level)
+        )
 
     def initialize_after_runmanager(self):
         """ """
@@ -837,7 +848,9 @@ class VolumeEngine(g4.G4VUserDetectorConstruction, EngineBase):
         # Region-based EM configuration such as DNA transport is resolved by
         # Geant4 during physics construction, so the corresponding G4Region
         # objects must exist as soon as the geometry has been built.
-        for region in self.simulation_engine.simulation.physics_manager.regions.values():
+        for (
+            region
+        ) in self.simulation_engine.simulation.physics_manager.regions.values():
             if region.needs_preinitialization():
                 region.preinitialize_for_em()
 

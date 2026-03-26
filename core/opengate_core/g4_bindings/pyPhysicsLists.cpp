@@ -41,6 +41,7 @@ namespace py = pybind11;
 #include "G4EmStandardPhysics_option4.hh"
 
 #include "G4EmDNAPhysics.hh"
+#include "G4EmDNAPhysicsActivator.hh"
 #include "G4EmDNAPhysics_option1.hh"
 #include "G4EmDNAPhysics_option2.hh"
 #include "G4EmDNAPhysics_option3.hh"
@@ -187,6 +188,7 @@ void init_G4PhysicsLists(py::module &m) {
   ADD_PHYSICS_CONSTRUCTOR(G4EmDNAPhysics_option6)
   ADD_PHYSICS_CONSTRUCTOR(G4EmDNAPhysics_option7)
   ADD_PHYSICS_CONSTRUCTOR(G4EmDNAPhysics_option8)
+  ADD_PHYSICS_CONSTRUCTOR(G4EmDNAPhysicsActivator)
   ADD_PHYSICS_CONSTRUCTOR(G4OpticalPhysics)
 
   ADD_PHYSICS_CONSTRUCTOR(G4DecayPhysics)
