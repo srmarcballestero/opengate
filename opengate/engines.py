@@ -279,12 +279,17 @@ class PhysicsEngine(EngineBase):
         G4RunManager.Initialize() is called.
 
         """
+        self.initialize_regions_before_runmanager()
         self.initialize_physics_list()
         self.initialize_dna_physics_regions()
         self.initialize_g4_em_parameters()
         self.initialize_user_limits_physics()
         self.initialize_physics_biasing()
         self.initialize_parallel_world_physics()
+
+    def initialize_regions_before_runmanager(self):
+        for region in self.physics_manager.regions.values():
+            region.initialize_before_runmanager()
 
     def initialize_dna_physics_regions(self):
         if not any(
@@ -330,7 +335,7 @@ class PhysicsEngine(EngineBase):
 
     def initialize_regions(self):
         for region in self.physics_manager.regions.values():
-            region.initialize()
+            region.initialize_after_runmanager()
 
     def initialize_global_cuts(self):
         ui = self.physics_manager.user_info
@@ -845,14 +850,10 @@ class VolumeEngine(g4.G4VUserDetectorConstruction, EngineBase):
         for volume in PreOrderIter(self.volume_manager.world_volume):
             volume.construct()
 
-        # Region-based EM configuration such as DNA transport is resolved by
-        # Geant4 during physics construction, so the corresponding G4Region
-        # objects must exist as soon as the geometry has been built.
         for (
             region
         ) in self.simulation_engine.simulation.physics_manager.regions.values():
-            if region.needs_preinitialization():
-                region.preinitialize_for_em()
+            region.initialize_during_runmanager()
 
         # return the (main) world physical volume
         self._is_constructed = True
