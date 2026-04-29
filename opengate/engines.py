@@ -217,6 +217,7 @@ class PhysicsEngine(EngineBase):
         self.g4_em_parameters = None
         self.g4_parallel_world_physics = []
         self.g4_dna_physics_activator = None
+        self.g4_microelec_physics_activator = None
         self.g4_optical_material_tables = {}
         self.g4_physical_volumes = []
         self.g4_surface_properties = None
@@ -245,6 +246,7 @@ class PhysicsEngine(EngineBase):
         self.g4_em_parameters = None
         self.g4_parallel_world_physics = []
         self.g4_dna_physics_activator = None
+        self.g4_microelec_physics_activator = None
         self.g4_optical_material_tables = {}
         self.g4_physical_volumes = []
         self.g4_surface_properties = None
@@ -284,6 +286,7 @@ class PhysicsEngine(EngineBase):
         self.initialize_regions_before_runmanager()
         self.initialize_physics_list()
         self.initialize_dna_physics_regions()
+        self.initialize_microelec_physics_regions()
         self.initialize_g4_em_parameters()
         self.initialize_user_limits_physics()
         self.initialize_physics_biasing()
@@ -303,6 +306,61 @@ class PhysicsEngine(EngineBase):
             self.physics_manager.simulation.g4_verbose_level
         )
         self.g4_physics_list.RegisterPhysics(self.g4_dna_physics_activator)
+
+    # MicroElec data files exist for these material stems (after stripping "G4_" prefix).
+    # Source: G4EMLOW microelec/Structure/Data_*.dat
+    _MICROELEC_SUPPORTED_MATERIAL_STEMS = frozenset(
+        [
+            "Ag",
+            "Al",
+            "ALUMINUM_OXIDE",
+            "Au",
+            "Be",
+            "BORON_NITRIDE",
+            "C",
+            "Cu",
+            "Fe",
+            "Ge",
+            "KAPTON",
+            "Ni",
+            "Si",
+            "SILICON_DIOXIDE",
+            "Ti",
+            "TITANIUM_NITRIDE",
+            "W",
+        ]
+    )
+
+    def _check_microelec_material(self, volume_name, material_name):
+        stem = material_name[3:] if material_name.startswith("G4_") else material_name
+        if stem not in self._MICROELEC_SUPPORTED_MATERIAL_STEMS:
+            supported = ", ".join(sorted(self._MICROELEC_SUPPORTED_MATERIAL_STEMS))
+            fatal(
+                f"Volume '{volume_name}' uses material '{material_name}', which is not supported "
+                f"by the MicroElec physics models. MicroElec data files are only available for: "
+                f"{supported}."
+            )
+
+    def initialize_microelec_physics_regions(self):
+        microelec_regions = [
+            region
+            for region in self.physics_manager.regions.values()
+            if region.microelec_em_physics is not None
+        ]
+        if not microelec_regions:
+            return
+        volume_manager = self.physics_manager.simulation.volume_manager
+        for region in microelec_regions:
+            for volume_name in region.root_logical_volumes:
+                vol = volume_manager.volumes.get(volume_name)
+                if vol is not None and vol.material is not None:
+                    self._check_microelec_material(volume_name, vol.material)
+        self.g4_microelec_physics_activator = g4.GateG4EmMicroElecPhysicsTest(
+            self.physics_manager.simulation.g4_verbose_level
+        )
+        for region in microelec_regions:
+            self.g4_microelec_physics_activator.AddRegion(region.name)
+        self.g4_physics_list.RegisterPhysics(self.g4_microelec_physics_activator)
 
     def initialize_after_runmanager(self):
         """ """
@@ -410,6 +468,11 @@ class PhysicsEngine(EngineBase):
             region.initialize_em_switches()
             if region.dna_em_physics is not None:
                 self.g4_em_parameters.AddDNA(region.name, region.dna_em_physics)
+            # MicroElec regions are handled by GateG4EmMicroElecPhysicsTest
+            # (registered in initialize_microelec_physics_regions) which reads
+            # its own region list.  AddMicroElec is intentionally NOT called
+            # here because it would trigger G4EmModelActivator::ActivateMicroElec
+            # inside the standard EM constructor, causing double-activation.
 
     def initialize_physics_biasing(self):
         # get a dictionary {particle:[processes]}

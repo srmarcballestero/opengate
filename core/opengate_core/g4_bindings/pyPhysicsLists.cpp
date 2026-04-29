@@ -65,6 +65,8 @@ namespace py = pybind11;
 #include "G4VPhysicsConstructor.hh"
 #include "G4VUserPhysicsList.hh"
 
+#include "../opengate_lib/GateG4EmMicroElecPhysicsTest.h"
+
 // macro for adding physics lists: no parameter
 // #define ADD_PHYSICS_LIST0(m, plname) \
 //   py::class_<plname, G4VModularPhysicsList>(m, #plname).def(py::init<>()); \
@@ -189,6 +191,11 @@ void init_G4PhysicsLists(py::module &m) {
   ADD_PHYSICS_CONSTRUCTOR(G4EmDNAPhysics_option7)
   ADD_PHYSICS_CONSTRUCTOR(G4EmDNAPhysics_option8)
   ADD_PHYSICS_CONSTRUCTOR(G4EmDNAPhysicsActivator)
+  py::class_<GateG4EmMicroElecPhysicsTest, G4VPhysicsConstructor,
+             std::unique_ptr<GateG4EmMicroElecPhysicsTest, py::nodelete>>(
+      m, "GateG4EmMicroElecPhysicsTest")
+      .def(py::init<G4int>())
+      .def("AddRegion", &GateG4EmMicroElecPhysicsTest::AddRegion);
   ADD_PHYSICS_CONSTRUCTOR(G4OpticalPhysics)
 
   ADD_PHYSICS_CONSTRUCTOR(G4DecayPhysics)

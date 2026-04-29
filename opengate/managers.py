@@ -673,6 +673,14 @@ def _setter_hook_physics_list_name(self, physics_list_name):
             f"Configure DNA EM only per region, e.g. via Region.dna_em_physics, "
             f"PhysicsManager.set_dna_em_physics(...), or VolumeBase.set_dna_em_physics(...)."
         )
+
+    if physics_list_name.startswith("GateMicroelec"):
+        fatal(
+            f"Global MicroElec EM physics are not supported in GATE. "
+            f"Received '{physics_list_name}'. "
+            f"Configure MicroElec EM only per region, e.g. via Region.microelec_em_physics, "
+            f"PhysicsManager.set_microelec_em_physics(...), or VolumeBase.set_microelec_em_physics(...)."
+        )
     return physics_list_name
 
 
@@ -685,7 +693,7 @@ class PhysicsManager(GateObject):
         "physics_list_name": (
             "QGSP_BERT_EMV",
             {
-                "doc": "Name of the Geant4 physics list. DNA EM physics must be configured per region, not as a global physics list.",
+                "doc": "Name of the Geant4 physics list. DNA and MicroElec EM physics must be configured per region, not as a global physics list.",
                 "setter_hook": _setter_hook_physics_list_name,
             },
         ),
@@ -1080,6 +1088,38 @@ class PhysicsManager(GateObject):
         except KeyError:
             fatal(f"Cannot set DNA EM physics: region '{region_name}' does not exist.")
         self._set_region_dna_em_physics(region, dna_em_physics)
+
+    # FIXME (@srmarcballestero): material check for MicroElec EM physics -> guard + throw exception
+    # FIXME (@srmarcballestero): DNA and MicroElec EM physics should not be settable at the same time in the same region -> guard + throw exception
+    def _set_region_microelec_em_physics(self, region, microelec_em_physics):
+        allowed_values = Region.inherited_user_info_defaults["microelec_em_physics"][1][
+            "allowed_values"
+        ]
+        if microelec_em_physics not in allowed_values:
+            fatal(
+                f"Illegal MicroElec EM physics value '{microelec_em_physics}' for region {region.name}. "
+                f"Allowed values are: {allowed_values}."
+            )
+        current_value = region.user_info["microelec_em_physics"]
+        if current_value not in (None, microelec_em_physics):
+            fatal(
+                f"Region {region.name} already uses MicroElec EM physics '{current_value}'. "
+                f"Cannot also assign '{microelec_em_physics}'. Only one MicroElec EM physics is allowed per region."
+            )
+        region.user_info["microelec_em_physics"] = microelec_em_physics
+
+    def set_microelec_em_physics(self, volume_name, microelec_em_physics):
+        region = self.find_or_create_region(volume_name)
+        self._set_region_microelec_em_physics(region, microelec_em_physics)
+
+    def set_microelec_em_physics_in_region(self, region_name, microelec_em_physics):
+        try:
+            region = self.regions[region_name]
+        except KeyError:
+            fatal(
+                f"Cannot set MicroElec EM physics: region '{region_name}' does not exist."
+            )
+        self._set_region_microelec_em_physics(region, microelec_em_physics)
 
     def set_user_limits_particles(self, particle_names):
         if not isinstance(particle_names, (list, set, tuple)):

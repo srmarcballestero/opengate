@@ -142,6 +142,10 @@ class Region(GateObject):
         "DNA_Opt8",
     )
 
+    available_microelec_em_physics = (
+        "MicroElec",
+    )
+
     user_info_defaults = {}
     user_info_defaults["user_limits"] = (
         Box(
@@ -192,6 +196,13 @@ class Region(GateObject):
         {
             "doc": "DNA EM physics option to activate in this region.",
             "allowed_values": available_dna_em_physics + (None,),
+        },
+    )
+    user_info_defaults["microelec_em_physics"] = (
+        None,
+        {
+            "doc": "MicroElec EM physics option to activate in this region.",
+            "allowed_values": available_microelec_em_physics + (None,),
         },
     )
 
