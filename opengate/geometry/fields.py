@@ -1,12 +1,21 @@
 import opengate_core as g4
 
+import numpy as np
+import opengate as gate
+
 from ..base import GateObject, process_cls
+from ..geometry.utility import (
+    get_transform_world_to_local,
+    get_transform_world_to_local_old,
+    vec_np_as_g4,
+    rot_np_as_g4,
+)
 from ..utility import g4_units
 
 # ! ======= KNOWN TODO'S ========
 # ! - implement the possibility of choosing the stepper type and equation type
 # ! - bind the sextupole magnetic field geant4 implementation
-# ! - implement mapped fields (e.g., from a CSV file)
+# ! WIP - implement mapped fields (e.g., from a CSV file)
 # ! - Overhead for custom fields implementation: every GetFieldValue call crosses c++ -> Python -> c++, acquiring the GIL each time,
 # !   which is very inefficient. Need to implement a more efficient way on the C++ side.
 # ! - in MT mode, create_field_manager() is called per thread and overwrites shared instance attrs (g4_field, etc.),
@@ -70,6 +79,7 @@ class FieldBase(GateObject):
 
         self.g4_field = None
         self._g4_runtime_objects = []
+        self._field_volume_obj = None  # Only used for mapped fields
 
         self.attached_to = []
         self._field_changes_energy = False
@@ -210,8 +220,16 @@ class QuadrupoleMagneticField(MagneticField):
         super().__init__(*args, **kwargs)
 
     def _create_field(self) -> None:
-        """Create the quadrupole magnetic field."""
-        self.g4_field = g4.G4QuadrupoleMagField(self.gradient)
+        """Create the quadrupole magnetic field, evaluated in local volume coordinates."""
+        inner = g4.G4QuadrupoleMagField(self.gradient)
+
+        translations_np, rotations_np = get_transform_world_to_local(
+            self._field_volume_obj
+        )
+        g4_translations = [vec_np_as_g4(t) for t in translations_np]
+        g4_rotations = [rot_np_as_g4(r) for r in rotations_np]
+
+        self.g4_field = g4.GateMagneticField(inner, g4_translations, g4_rotations)
 
 
 class CustomMagneticField(MagneticField):
@@ -530,10 +548,143 @@ class CustomElectroMagneticField(ElectroMagneticField):
         )
 
 
+# class MappedMagneticField(MagneticField):
+#     """Magnetic field defined by values on a regular 3D Cartesian grid.
+
+#     Field lookup is performed entirely in C++ (no Python callbacks at tracking
+#     time) using either trilinear or nearest-neighbour interpolation. Points
+#     outside the grid extent return zero field.
+#     """
+
+#     # ! TODO's (@srmarcballestero):
+#     # ! - refactor the _create_field() function to make it simpler.
+#     # ! - warning when using nearest interpolation with coarse grids
+#     # ! - implement a MappedElectroMagneticField, and MappedElectricField.
+#     # !    + for the electromagnetic case, separate grids should be used.
+#     # !    + a mother class should abstract the core functionality.
+
+#     # hints for IDE
+#     field_matrix: np.ndarray
+#     interpolation: str
+
+#     user_info_defaults = {
+#         "field_matrix": (
+#             None,
+#             {
+#                 "doc": (
+#                     "2D numpy array of shape (N, 6) with columns [x, y, z, Bx, By, Bz] "
+#                     "on a regular Cartesian grid. Geant4 units should be used."
+#                 ),
+#             },
+#         ),
+#         "interpolation": (
+#             "trilinear",
+#             {
+#                 "doc": "Interpolation method: 'trilinear' (default) or 'nearest'.",
+#             },
+#         ),
+#     }
+
+#     def __init__(self, *args, **kwargs) -> None:
+#         super().__init__(*args, **kwargs)
+
+#     def _create_field(self) -> None:
+#         if self.field_matrix is None:
+#             raise ValueError("field_matrix must be provided for MappedMagneticField")
+
+#         mat = np.asarray(self.field_matrix, dtype=np.float64)
+#         if mat.ndim != 2 or mat.shape[1] != 6:
+#             raise ValueError(
+#                 "field_matrix must be a 2D array with shape (N, 6) "
+#                 "containing columns [x, y, z, Bx, By, Bz]"
+#             )
+
+#         # Separate coordinates and field values
+#         positions = mat[:, :3]
+#         B_values = mat[:, 3:]
+
+#         # Sort in lexicographical order: x slowest, z fastest — matches C++ flat index.
+#         sort_idx = np.lexsort((positions[:, 2], positions[:, 1], positions[:, 0]))
+#         positions = positions[sort_idx]
+#         B_values = B_values[sort_idx]
+
+#         # Round to suppress floating-point noise before uniqueness check.
+#         x_vals = np.unique(np.round(positions[:, 0], 10))
+#         y_vals = np.unique(np.round(positions[:, 1], 10))
+#         z_vals = np.unique(np.round(positions[:, 2], 10))
+#         nx, ny, nz = len(x_vals), len(y_vals), len(z_vals)
+
+#         # --- Grid validation ---
+#         if len(positions) != nx * ny * nz:
+#             raise ValueError(
+#                 f"field_matrix does not define a complete regular 3D grid: "
+#                 f"expected {nx}*{ny}*{nz}={nx * ny * nz} points, got {len(positions)}"
+#             )
+#         if nx > 2 and not np.allclose(np.diff(x_vals), x_vals[1] - x_vals[0]):
+#             raise ValueError("field_matrix x-axis does not have uniform spacing")
+#         if ny > 2 and not np.allclose(np.diff(y_vals), y_vals[1] - y_vals[0]):
+#             raise ValueError("field_matrix y-axis does not have uniform spacing")
+#         if nz > 2 and not np.allclose(np.diff(z_vals), z_vals[1] - z_vals[0]):
+#             raise ValueError("field_matrix z-axis does not have uniform spacing")
+#         if nx < 2 or ny < 2 or nz < 2:
+#             raise ValueError(
+#                 "field_matrix must have at least 2 unique points along each axis "
+#                 "(no degenerate axes allowed)"
+#             )
+#         # ----------------------
+
+#         x0, y0, z0 = float(x_vals[0]), float(y_vals[0]), float(z_vals[0])
+#         dx = float(x_vals[1] - x_vals[0])
+#         dy = float(y_vals[1] - y_vals[0])
+#         dz = float(z_vals[1] - z_vals[0])
+
+#         interp_map = {
+#             "trilinear": g4.GateMappedMagneticFieldInterpolation.Trilinear,
+#             "nearest": g4.GateMappedMagneticFieldInterpolation.Nearest,
+#         }
+#         if self.interpolation not in interp_map:
+#             raise ValueError(
+#                 f"Unknown interpolation '{self.interpolation}'. "
+#                 f"Available options are 'trilinear' or 'nearest'."
+#             )
+
+#         # Collect one local-to-world transform per physical placement.
+#         translations_np, rotations_np = get_transform_world_to_local(
+#             self._field_volume_obj
+#         )
+
+#         g4_translations = [vec_np_as_g4(t) for t in translations_np]
+#         g4_rotations = [rot_np_as_g4(r) for r in rotations_np]
+
+#         self.g4_field = g4.GateMappedMagneticField(
+#             B_values[:, 0], B_values[:, 1], B_values[:, 2],
+#             nx, ny, nz,
+#             x0, y0, z0,
+#             dx, dy, dz,
+#             interp_map[self.interpolation],
+#             g4_translations, g4_rotations,
+#         )
+
+#     # Serialization
+#     # def to_dictionary(self):
+#     #     d = super().to_dictionary()
+#     #     if self.field_matrix is not None:
+#     #         d["field_matrix"] = np.asarray(self.field_matrix).tolist()
+#     #     return d
+
+#     # def from_dictionary(self, d):
+#     #     super().from_dictionary(d)
+#     #     if "field_matrix" in d and d["field_matrix"] is not None:
+#     #         self.field_matrix = np.asarray(d["field_matrix"])
+
+
+
+
 field_types = {
     "UniformMagneticField": UniformMagneticField,
     "QuadrupoleMagneticField": QuadrupoleMagneticField,
     "CustomMagneticField": CustomMagneticField,
+    # "MappedMagneticField": MappedMagneticField,
     "UniformElectricField": UniformElectricField,
     "CustomElectricField": CustomElectricField,
     "UniformElectroMagneticField": UniformElectroMagneticField,
@@ -545,6 +696,7 @@ process_cls(MagneticField)
 process_cls(UniformMagneticField)
 process_cls(QuadrupoleMagneticField)
 process_cls(CustomMagneticField)
+# process_cls(MappedMagneticField)
 process_cls(ElectroMagneticField)
 process_cls(ElectricField)
 process_cls(UniformElectricField)
