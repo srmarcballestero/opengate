@@ -44,7 +44,7 @@ if __name__ == "__main__":
     sim.output_dir = paths.output
 
     sim.visu = True
-    # sim.visu_type = "qt"
+    sim.visu_type = "qt"
     sim.visu_commands.append("/vis/scene/endOfEventAction accumulate 10000")
     sim.visu_commands.append("/vis/scene/add/magneticField 20 fullArrow")
     sim.visu_commands.append("/vis/scene/add/trajectories smooth")
@@ -64,7 +64,9 @@ if __name__ == "__main__":
     field.field_vector = [0, By, 0]
 
     field = fields.QuadrupoleMagneticField(name="B_quad")
-    field.gradient = By / 0.05  # B = G * r, so G = B / r, and we want B = By at r = 5 cm
+    field.gradient = (
+        By / 0.05
+    )  # B = G * r, so G = B / r, and we want B = By at r = 5 cm
 
     box.add_field(field)
 
@@ -78,7 +80,6 @@ if __name__ == "__main__":
     source.direction.type = "momentum"
     source.direction.momentum = [0, 0, 1]
 
-
     # Single box placement
     box_single = sim.add_volume("Box", "box_single")
     box_single.size = [50 * mm, 50 * mm, 250 * mm]
@@ -86,6 +87,14 @@ if __name__ == "__main__":
     box_single.material = "G4_Galactic"
     box_single.add_field(field)
 
+    # Sphere placements
+    sphere = sim.add_volume("Sphere", "sphere")
+    sphere.rmax = 50 * mm
+    sphere.translation = gate.geometry.utility.get_grid_repetition(
+        [1, 1, 5], [0, 0, 100 * mm], start=[250 * mm, 0, -100 * mm]
+    )
+    sphere.material = "G4_Galactic"
+    sphere.add_field(field)
 
     source1 = sim.add_source("GenericSource", "particle_source1")
     source1.particle = "proton"
@@ -98,8 +107,3 @@ if __name__ == "__main__":
     source1.direction.momentum = [0, 0, 1]
 
     sim.run()
-
-
-
-
-

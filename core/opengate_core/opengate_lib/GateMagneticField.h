@@ -8,23 +8,24 @@
 #ifndef GateMagneticField_h
 #define GateMagneticField_h
 
-#include "GateField.h"
 #include "G4MagneticField.hh"
 #include "G4RotationMatrix.hh"
 #include "G4ThreeVector.hh"
+#include "GateField.h"
 #include <vector>
+
+class G4VSolid;
 
 // Local-coordinate wrapper for any G4MagneticField.
 //
 // Geant4 built-in fields (G4QuadrupoleMagField, …) evaluate GetFieldValue in
-// world coordinates — their "centre" is the world origin.  This wrapper converts
-// the incoming world-space query point to the local frame of the physical
-// volume(s) the field is attached to, delegates to the inner field, then rotates
-// the result back to world coordinates.
+// world coordinates — their "centre" is the world origin.  This wrapper
+// converts the incoming world-space query point to the local frame of the
+// physical volume(s) the field is attached to, delegates to the inner field,
+// then rotates the result back to world coordinates.
 //
-// For repeated placements the correct copy is identified by finding the one
-// whose local origin is closest to the query point (see GateField for the
-// geometric justification).
+// For repeated placements the correct copy is identified via the shared solid's
+// Inside() check (see GateField for the rationale).
 //
 // Inheriting from G4MagneticField (not G4Field) lets the object be passed to
 // G4Mag_UsualEqRhs.  GateField (no G4 base) provides the transform logic;
@@ -32,16 +33,15 @@
 class GateMagneticField : public G4MagneticField, protected GateField {
 public:
   // inner – wrapped built-in field (not owned; caller must keep it alive)
-  GateMagneticField(
-    G4MagneticField*              inner,
-    std::vector<G4ThreeVector>    translations,
-    std::vector<G4RotationMatrix> rotations
-  );
+  // solid – shared solid of the logical volume the field is attached to
+  GateMagneticField(G4MagneticField *inner, const G4VSolid *solid,
+                    std::vector<G4ThreeVector> translations,
+                    std::vector<G4RotationMatrix> rotations);
 
-  void GetFieldValue(const G4double Point[4], G4double* Bfield) const override;
+  void GetFieldValue(const G4double Point[4], G4double *Bfield) const override;
 
 private:
-  G4MagneticField* m_inner;  // not owned
+  G4MagneticField *m_inner; // not owned
 };
 
 #endif // GateMagneticField_h

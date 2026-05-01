@@ -229,7 +229,12 @@ class QuadrupoleMagneticField(MagneticField):
         g4_translations = [vec_np_as_g4(t) for t in translations_np]
         g4_rotations = [rot_np_as_g4(r) for r in rotations_np]
 
-        self.g4_field = g4.GateMagneticField(inner, g4_translations, g4_rotations)
+        self.g4_field = g4.GateMagneticField(
+            inner,
+            self._field_volume_obj.g4_solid,
+            g4_translations,
+            g4_rotations,
+        )
 
 
 class CustomMagneticField(MagneticField):
@@ -676,8 +681,6 @@ class CustomElectroMagneticField(ElectroMagneticField):
 #     #     super().from_dictionary(d)
 #     #     if "field_matrix" in d and d["field_matrix"] is not None:
 #     #         self.field_matrix = np.asarray(d["field_matrix"])
-
-
 
 
 field_types = {

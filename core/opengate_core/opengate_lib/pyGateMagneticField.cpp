@@ -10,8 +10,9 @@
 
 namespace py = pybind11;
 
-#include "GateMagneticField.h"
 #include "G4MagneticField.hh"
+#include "G4VSolid.hh"
+#include "GateMagneticField.h"
 
 void init_GateMagneticField(py::module &m) {
 
@@ -19,17 +20,12 @@ void init_GateMagneticField(py::module &m) {
              std::unique_ptr<GateMagneticField, py::nodelete>>(
       m, "GateMagneticField")
 
-      .def(
-        py::init(
-          [](
-            G4MagneticField*              inner,
-            std::vector<G4ThreeVector>    translations,
-            std::vector<G4RotationMatrix> rotations
-          ) {
-            return new GateMagneticField(inner, translations, rotations);
-          }),
-          py::arg("inner_field"),
-          py::arg("translations"),
-          py::arg("rotations")
-      );
+      .def(py::init([](G4MagneticField *inner, const G4VSolid *solid,
+                       std::vector<G4ThreeVector> translations,
+                       std::vector<G4RotationMatrix> rotations) {
+             return new GateMagneticField(inner, solid, translations,
+                                          rotations);
+           }),
+           py::arg("inner_field"), py::arg("solid"), py::arg("translations"),
+           py::arg("rotations"));
 }
