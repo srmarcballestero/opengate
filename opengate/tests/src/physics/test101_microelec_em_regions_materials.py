@@ -1,81 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# MicroElec has no valid surface/cross-section treatment for a material that
+# lacks MicroElec data unless that material is vacuum-like (its boundary work
+# function can then be safely forced to 0). A MicroElec region surrounded by a
+# dense, unsupported material (e.g. G4_WATER) therefore cannot be initialized
+# and must be rejected with a clear error rather than silently assumed to be
+# vacuum. This test verifies that rejection.
+
 import opengate as gate
-import opengate_core as g4
 from opengate.tests import utility
 
 TARGET_NAME = "target"
 
 
-def microelec_hook(simulation_engine):
-    eV = g4.G4UnitDefinition.GetValueOf("eV")
-    results = {}
-    for (
-        volume_name,
-        volume,
-    ) in simulation_engine.simulation.volume_manager.volumes.items():
-        results[volume_name] = g4.check_em_model_in_volume(
-            volume.g4_logical_volume,
-            "e-",
-            "e-_G4MicroElecElastic",
-            1000.0 * eV,
-        )
-    simulation_engine.user_hook_log.append(results)
-
-
-def check_microelec_models(sim):
-    model_checks = sim.user_hook_log[0]
-    target_model = model_checks.get(TARGET_NAME)
-    world_model = model_checks.get("world")
-
-    checks = [
-        (
-            f"MicroElec elastic model active in {TARGET_NAME}",
-            target_model,
-            "contains MicroElec",
-        ),
-        (
-            "World volume uses DummyModel (not MicroElec)",
-            world_model,
-            "not MicroElec",
-        ),
-    ]
-
-    is_ok = True
-    for label, actual, expected in checks:
-        if expected == "contains MicroElec":
-            passed = actual is not None and "MicroElec" in str(actual)
-        elif expected == "not MicroElec":
-            passed = actual is None or "MicroElec" not in str(actual)
-        else:
-            passed = actual == expected
-        status = "PASS" if passed else "FAIL"
-        print(f"  [{status}] {label}")
-        print(f"    actual  : {actual}")
-        print(f"    expected: {expected}")
-        is_ok = is_ok and passed
-
-    return is_ok
-
-
-VISU = False
-
-if __name__ == "__main__":
+def build_sim(world_material):
     sim = gate.Simulation()
-    sim.g4_verbose = True
     sim.visu = False
-    sim.random_seed = 42
+    sim.random_engine = "MersenneTwister"
+    sim.random_seed = 123456
 
-    if VISU:
-        sim.visu = True
-        sim.visu_type = "qt"
-        sim.visu_commands.append("/vis/viewer/set/viewpointVector 1 0 0")
-        sim.visu_commands.append("/vis/scene/endOfEventAction accumulate")
-        sim.visu_commands.append("/vis/scene/add/trajectories smooth")
-        sim.visu_commands.append("/vis/scene/add/magneticField 15 fullArrow")
-
-    m = gate.g4_units.m
     cm = gate.g4_units.cm
     mm = gate.g4_units.mm
     nm = gate.g4_units.nm
@@ -84,7 +28,7 @@ if __name__ == "__main__":
     sim.volume_manager.add_material_database("opengate/contrib/GateMaterials.db")
 
     sim.world.size = [10 * cm, 10 * cm, 10 * cm]
-    sim.world.material = "G4_WATER"
+    sim.world.material = world_material
 
     target = sim.add_volume("Box", TARGET_NAME)
     target.size = [5 * cm, 5 * cm, 1 * mm]
@@ -109,9 +53,27 @@ if __name__ == "__main__":
     source.n = 1
 
     sim.add_actor("SimulationStatisticsActor", "stats")
-    sim.user_hook_after_run = microelec_hook
+    return sim
 
-    sim.run(start_new_process=False)
 
-    is_ok = check_microelec_models(sim)
+if __name__ == "__main__":
+    # A MicroElec region surrounded by dense, unsupported G4_WATER must be
+    # rejected during initialization.
+    sim = build_sim("G4_WATER")
+
+    is_ok = False
+    try:
+        sim.run(start_new_process=False)
+        print(
+            "  [FAIL] expected a fatal for a MicroElec region in dense G4_WATER, "
+            "but the simulation initialized successfully"
+        )
+    except Exception as e:
+        message = str(e)
+        expected = "not vacuum-like" in message and "G4_WATER" in message
+        status = "PASS" if expected else "FAIL"
+        print(f"  [{status}] dense unsupported surrounder G4_WATER is rejected")
+        print(f"    error: {message}")
+        is_ok = expected
+
     utility.test_ok(is_ok)
