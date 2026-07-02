@@ -33,7 +33,7 @@
 //     alpha ionisation:      Bragg <= 7.9452 MeV, BetheBloch > 7.9452 MeV
 //     ion ionisation:        LindhardSorensen
 
-#include "GateG4EmMicroElecPhysicsTest.h"
+#include "GateG4MicroElecPhysics.h"
 
 #include "G4EmConfigurator.hh"
 #include "G4EmParameters.hh"
@@ -105,41 +105,41 @@ public:
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
-GateG4EmMicroElecPhysicsTest::GateG4EmMicroElecPhysicsTest(G4int ver)
-    : G4VPhysicsConstructor("GateG4EmMicroElecPhysicsTest", ver) {}
+GateG4MicroElecPhysics::GateG4MicroElecPhysics(G4int ver)
+    : G4VPhysicsConstructor("GateG4MicroElecPhysics", ver) {}
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
-GateG4EmMicroElecPhysicsTest::RegionConfig &
-GateG4EmMicroElecPhysicsTest::configFor(const G4String &regionName) {
+GateG4MicroElecPhysics::RegionConfig &
+GateG4MicroElecPhysics::configFor(const G4String &regionName) {
   return fConfigs[regionName]; // default-constructs on first access
 }
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
-void GateG4EmMicroElecPhysicsTest::AddRegion(const G4String &regionName) {
+void GateG4MicroElecPhysics::AddRegion(const G4String &regionName) {
   fRegions.push_back(regionName);
   configFor(regionName); // ensure a config exists
 }
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
-void GateG4EmMicroElecPhysicsTest::SetRegionElectronThreshold(
+void GateG4MicroElecPhysics::SetRegionElectronThreshold(
     const G4String &regionName, G4double value) {
   configFor(regionName).electronThreshold = value;
 }
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
-void GateG4EmMicroElecPhysicsTest::SetRegionProtonThreshold(
+void GateG4MicroElecPhysics::SetRegionProtonThreshold(
     const G4String &regionName, G4double value) {
   configFor(regionName).protonThreshold = value;
 }
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
-void GateG4EmMicroElecPhysicsTest::SetRegionBaseList(const G4String &regionName,
-                                                     const G4String &baseList) {
+void GateG4MicroElecPhysics::SetRegionBaseList(const G4String &regionName,
+                                               const G4String &baseList) {
   G4String bl = baseList;
   G4StrUtil::to_lower(bl);
   if (bl == "opt3") {
@@ -149,21 +149,21 @@ void GateG4EmMicroElecPhysicsTest::SetRegionBaseList(const G4String &regionName,
   } else {
     G4String msg = "Unknown MicroElec base list '" + baseList +
                    "'. Allowed values are 'opt3' and 'opt4'.";
-    G4Exception("GateG4EmMicroElecPhysicsTest::SetRegionBaseList", "gate0002",
+    G4Exception("GateG4MicroElecPhysics::SetRegionBaseList", "gate0002",
                 FatalException, msg.c_str());
   }
 }
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
-void GateG4EmMicroElecPhysicsTest::SetRegionUsePenelope(
-    const G4String &regionName, G4bool usePenelope) {
+void GateG4MicroElecPhysics::SetRegionUsePenelope(const G4String &regionName,
+                                                  G4bool usePenelope) {
   configFor(regionName).usePenelope = usePenelope;
 }
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
-void GateG4EmMicroElecPhysicsTest::ConstructParticle() {
+void GateG4MicroElecPhysics::ConstructParticle() {
   G4Gamma::GammaDefinition();
   G4Electron::ElectronDefinition();
   G4Positron::PositronDefinition();
@@ -174,7 +174,7 @@ void GateG4EmMicroElecPhysicsTest::ConstructParticle() {
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
-void GateG4EmMicroElecPhysicsTest::ConstructProcess() {
+void GateG4MicroElecPhysics::ConstructProcess() {
   if (fRegions.empty())
     return;
 

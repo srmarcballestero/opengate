@@ -74,7 +74,7 @@ namespace py = pybind11;
 #include <G4VUserChemistryList.hh>
 #include <G4VUserPhysicsList.hh>
 
-#include "../opengate_lib/GateG4EmMicroElecPhysicsTest.h"
+#include "../opengate_lib/GateG4MicroElecPhysics.h"
 
 // macro for adding reference physics lists
 #define ADD_REFERENCE_PHYSICS_LIST0(plname)                                    \
@@ -210,19 +210,18 @@ void init_G4PhysicsLists(py::module &m) {
   ADD_PHYSICS_CONSTRUCTOR(G4EmDNAPhysics_option7)
   ADD_PHYSICS_CONSTRUCTOR(G4EmDNAPhysics_option8)
   ADD_PHYSICS_CONSTRUCTOR(G4EmDNAPhysicsActivator)
-  py::class_<GateG4EmMicroElecPhysicsTest, G4VPhysicsConstructor,
-             std::unique_ptr<GateG4EmMicroElecPhysicsTest, py::nodelete>>(
-      m, "GateG4EmMicroElecPhysicsTest")
+  py::class_<GateG4MicroElecPhysics, G4VPhysicsConstructor,
+             std::unique_ptr<GateG4MicroElecPhysics, py::nodelete>>(
+      m, "GateG4MicroElecPhysics")
       .def(py::init<G4int>())
-      .def("AddRegion", &GateG4EmMicroElecPhysicsTest::AddRegion)
+      .def("AddRegion", &GateG4MicroElecPhysics::AddRegion)
       .def("SetRegionElectronThreshold",
-           &GateG4EmMicroElecPhysicsTest::SetRegionElectronThreshold)
+           &GateG4MicroElecPhysics::SetRegionElectronThreshold)
       .def("SetRegionProtonThreshold",
-           &GateG4EmMicroElecPhysicsTest::SetRegionProtonThreshold)
-      .def("SetRegionBaseList",
-           &GateG4EmMicroElecPhysicsTest::SetRegionBaseList)
+           &GateG4MicroElecPhysics::SetRegionProtonThreshold)
+      .def("SetRegionBaseList", &GateG4MicroElecPhysics::SetRegionBaseList)
       .def("SetRegionUsePenelope",
-           &GateG4EmMicroElecPhysicsTest::SetRegionUsePenelope);
+           &GateG4MicroElecPhysics::SetRegionUsePenelope);
   ADD_CHEMISTRY_LIST(G4EmDNAChemistry)
   ADD_CHEMISTRY_LIST(G4EmDNAChemistry_option1)
   ADD_CHEMISTRY_LIST(G4EmDNAChemistry_option2)

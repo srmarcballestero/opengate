@@ -561,7 +561,7 @@ class PhysicsEngine(EngineBase):
         self._microelec_alias_unsupported_materials(microelec_regions)
         # Keep a Python ref to the activator (created on the Python side, then
         # registered into a Geant4-owned physics list).
-        self.g4_microelec_physics_activator = g4.GateG4EmMicroElecPhysicsTest(
+        self.g4_microelec_physics_activator = g4.GateG4MicroElecPhysics(
             self.physics_manager.simulation.g4_verbose_level
         )
         for region in microelec_regions:
@@ -696,7 +696,7 @@ class PhysicsEngine(EngineBase):
             )
         for region in self.physics_manager.regions.values():
             region.initialize_em_switches()
-            # "MicroElec" is handled by GateG4EmMicroElecPhysicsTest (registered in
+            # "MicroElec" is handled by GateG4MicroElecPhysics (registered in
             # initialize_microelec_physics_regions), which reads its own region
             # list. AddMicroElec is intentionally NOT called here because it would
             # trigger G4EmModelActivator::ActivateMicroElec inside the standard EM

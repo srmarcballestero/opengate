@@ -5,8 +5,8 @@
    See LICENSE.md for further details
    -------------------------------------------------- */
 
-#ifndef GateG4EmMicroElecPhysicsTest_h
-#define GateG4EmMicroElecPhysicsTest_h
+#ifndef GateG4MicroElecPhysics_h
+#define GateG4MicroElecPhysics_h
 
 #include "CLHEP/Units/SystemOfUnits.h"
 #include "G4String.hh"
@@ -20,10 +20,10 @@ enum class GateMicroElecBaseList { opt3, opt4 };
 
 // MicroElec track-structure physics overlaid on a standard EM base list
 // (em_opt3 or em_opt4).
-class GateG4EmMicroElecPhysicsTest : public G4VPhysicsConstructor {
+class GateG4MicroElecPhysics : public G4VPhysicsConstructor {
 public:
-  explicit GateG4EmMicroElecPhysicsTest(G4int ver = 1);
-  ~GateG4EmMicroElecPhysicsTest() override = default;
+  explicit GateG4MicroElecPhysics(G4int ver = 1);
+  ~GateG4MicroElecPhysics() override = default;
 
   void AddRegion(const G4String &regionName);
 
