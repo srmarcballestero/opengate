@@ -984,6 +984,113 @@ class PhysicsManager(GateObject):
             )
         region.track_structure_em_physics = track_structure_em_physics
 
+    # --- MicroElec ----------------------------------------------------------
+    # MicroElec is selected through the same track_structure_em_physics region
+    # attribute (value "MicroElec"), but carries extra per-region settings
+    # (base list, handoff thresholds, Penelope) that plain DNA does not. These
+    # convenience setters assign the selector and validate the extras.
+    _microelec_electron_threshold_ceiling = (
+        10 * g4_units.keV
+    )  # inelastic-model ceiling (elastic can go higher; capped in C++)
+    _microelec_proton_threshold_ceiling = 10 * g4_units.MeV
+
+    def _validate_microelec_threshold(self, region, name, value, ceiling):
+        if not isinstance(value, (int, float)) or value <= 0:
+            fatal(
+                f"MicroElec {name} for region {region.name} must be a positive "
+                f"energy (in Geant4 units), got {value!r}."
+            )
+        if value > ceiling:
+            warning(
+                f"MicroElec {name}={value / g4_units.MeV:g} MeV for region "
+                f"{region.name} exceeds the MicroElec data-validity ceiling "
+                f"({ceiling / g4_units.MeV:g} MeV); it is clamped to that ceiling "
+                f"(the MicroElec models cannot be used above it)."
+            )
+
+    def _set_region_microelec_em_physics(
+        self,
+        region,
+        electron_threshold=None,
+        proton_threshold=None,
+        base_list=None,
+        use_penelope=None,
+    ):
+        current_value = region.user_info["track_structure_em_physics"]
+        if current_value not in (None, "MicroElec"):
+            fatal(
+                f"Region {region.name} already uses track-structure EM physics "
+                f"'{current_value}'. Cannot also assign 'MicroElec'. Only one "
+                f"track-structure EM physics is allowed per region."
+            )
+        region.track_structure_em_physics = "MicroElec"
+        if electron_threshold is not None:
+            self._validate_microelec_threshold(
+                region,
+                "electron_threshold",
+                electron_threshold,
+                self._microelec_electron_threshold_ceiling,
+            )
+            region.user_info["microelec_electron_threshold"] = electron_threshold
+        if proton_threshold is not None:
+            self._validate_microelec_threshold(
+                region,
+                "proton_threshold",
+                proton_threshold,
+                self._microelec_proton_threshold_ceiling,
+            )
+            region.user_info["microelec_proton_threshold"] = proton_threshold
+        if base_list is not None:
+            allowed_bl = Region.available_microelec_base_lists
+            if base_list not in allowed_bl:
+                fatal(
+                    f"Illegal MicroElec base_list '{base_list}' for region "
+                    f"{region.name}. Allowed values are: {list(allowed_bl)}."
+                )
+            region.user_info["microelec_base_list"] = base_list
+        if use_penelope is not None:
+            region.user_info["microelec_use_penelope"] = bool(use_penelope)
+
+    def set_microelec_em_physics(
+        self,
+        volume_name,
+        electron_threshold=None,
+        proton_threshold=None,
+        base_list=None,
+        use_penelope=None,
+    ):
+        volume_name = self._normalize_volume_name(volume_name)
+        region = self.find_or_create_region(volume_name)
+        self._set_region_microelec_em_physics(
+            region,
+            electron_threshold,
+            proton_threshold,
+            base_list,
+            use_penelope,
+        )
+
+    def set_microelec_em_physics_in_region(
+        self,
+        region_name,
+        electron_threshold=None,
+        proton_threshold=None,
+        base_list=None,
+        use_penelope=None,
+    ):
+        try:
+            region = self.regions[region_name]
+        except KeyError:
+            fatal(
+                f"Cannot set MicroElec EM physics: region '{region_name}' does not exist."
+            )
+        self._set_region_microelec_em_physics(
+            region,
+            electron_threshold,
+            proton_threshold,
+            base_list,
+            use_penelope,
+        )
+
     def set_user_limits_particles(self, particle_names):
         raise GateDeprecationError(
             "The function set_user_limits_particles has been removed. Set the particle(s) directly via: \n"
