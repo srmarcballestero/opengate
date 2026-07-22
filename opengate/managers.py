@@ -686,6 +686,23 @@ class PhysicsManager(GateObject):
                 "doc": "Dict of material_name:energy_value, such that: sim.physics_manager.material_ionisation_potential['IEC_PLASTIC'] = 5.0 * eV. "
             },
         ),
+        "microelec_surface_work_functions": (
+            Box(),
+            {
+                "doc": "MicroElec only: dict of material_name:work_function used by "
+                "G4MicroElecSurface at interfaces, e.g. "
+                "sim.physics_manager.microelec_surface_work_functions['Brass'] = 4.2 * eV. "
+                "Intended for a non-database bulk that touches a MicroElec region "
+                "through a thin database skin (e.g. a G4_Cu skin around a Brass "
+                "core): set the bulk's work function equal to the skin's so the "
+                "interface barrier (the work-function difference) vanishes and the "
+                "metal-metal contact is irrelevant, instead of the bulk being "
+                "treated as vacuum (work function 0) and imposing a spurious "
+                "escape barrier. Materials not listed keep the default behavior "
+                "(database value, or 0 for a vacuum-like surrounder). Only affects "
+                "materials absent from the MicroElec database.",
+            },
+        ),
         # "processes_to_bias": (
         #     Box(
         #         [
@@ -1090,6 +1107,23 @@ class PhysicsManager(GateObject):
             base_list,
             use_penelope,
         )
+
+    def set_microelec_surface_work_function(self, material_name, work_function):
+        """Override the MicroElec surface work function of a bulk material.
+
+        See the ``microelec_surface_work_functions`` user info for the rationale.
+        ``material_name`` must match the runtime Geant4 material name exactly
+        (NIST materials keep their ``G4_`` prefix, e.g. ``G4_Cu``). Set
+        ``work_function`` to the touching skin material's work function so the
+        interface barrier vanishes.
+        """
+        if not isinstance(work_function, (int, float)) or work_function < 0:
+            fatal(
+                f"MicroElec surface work function for material "
+                f"'{material_name}' must be a non-negative energy (in Geant4 "
+                f"units), got {work_function!r}."
+            )
+        self.microelec_surface_work_functions[material_name] = work_function
 
     def set_user_limits_particles(self, particle_names):
         raise GateDeprecationError(

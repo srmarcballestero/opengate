@@ -41,20 +41,22 @@ def _translate_track_structure_em_physics_to_geant4(track_structure_em_physics):
         )
 
 
-def _zero_microelec_work_function(structure_text: str) -> str:
-    """Return a MicroElec structure file with its ``WorkFunction`` value zeroed.
+def _set_microelec_work_function(structure_text: str, work_function: float) -> str:
+    """Return a MicroElec structure file with its ``WorkFunction`` value replaced.
 
     Structure files are plain text with one field per line, e.g.
-    ``1 WorkFunction eV 4.05``. We replace the values after the unit with 0 so
-    that ``G4MicroElecSurface`` treats the material as a vacuum-equivalent
-    boundary (no spurious surface barrier). All other fields are preserved.
+    ``1 WorkFunction eV 4.05``. We rewrite the ``WorkFunction`` line to carry
+    ``work_function`` (given in Geant4 internal units), always emitting it in eV
+    (a unit the MicroElec structure-file parser understands). All other fields
+    are preserved.
     """
+    value_ev = work_function / g4.G4UnitDefinition.GetValueOf("eV")
     out = []
     for line in structure_text.splitlines():
         tokens = line.split()
         # format: <count> <name> <unit> <value...>
         if len(tokens) >= 4 and tokens[1] == "WorkFunction":
-            out.append(f"{tokens[0]} {tokens[1]} {tokens[2]} 0")
+            out.append(f"{tokens[0]} {tokens[1]} eV {value_ev:.10g}")
         else:
             out.append(line)
     return "\n".join(out) + "\n"
@@ -460,17 +462,25 @@ class PhysicsEngine(EngineBase):
         both materials at every boundary crossing and applies their difference as
         a surface barrier. Symlinking the donor's structure file would silently
         give the surrounding material the donor's work function. We therefore
-        write the structure file with ``WorkFunction`` set to 0, which makes the
-        surrounding material behave exactly like true "Vacuum" at the boundary
-        (the surface process hardcodes 0 for "Vacuum"). This is both inert and
-        physically correct for a *vacuum-like* surrounder.
+        write the structure file with an explicit ``WorkFunction``:
 
-        Because the work function is forced to 0, this aliasing is only valid for
-        materials that really are vacuum-like. We therefore only apply it to
-        surrounding materials below a density threshold; a denser unsupported
-        surrounder (e.g. water, a solid) has no valid MicroElec surface treatment
-        and is rejected with a clear error rather than being silently assumed to
-        be vacuum.
+        - For a vacuum-like surrounder (default): 0, which makes it behave exactly
+          like true "Vacuum" at the boundary (the surface process hardcodes 0 for
+          "Vacuum"). This is both inert and physically correct for such a material.
+          Because the work function is forced to 0, this is only valid for
+          materials that really are vacuum-like, so it is applied only below a
+          density threshold; a denser unsupported surrounder (e.g. water, a solid)
+          has no valid MicroElec surface treatment and is rejected with a clear
+          error rather than being silently assumed to be vacuum.
+
+        - For a material listed in
+          ``physics_manager.microelec_surface_work_functions``: the user-supplied
+          work function. This is the opt-in escape hatch for a non-database bulk
+          that touches a region through a thin database skin (e.g. a G4_Cu skin
+          around a Brass core): setting the bulk's work function equal to the
+          skin's makes their difference (the interface barrier) zero, so the
+          metal-metal contact is transparent instead of imposing a spurious escape
+          barrier. Listed materials bypass the vacuum density check.
         """
         from pathlib import Path
 
@@ -482,10 +492,13 @@ class PhysicsEngine(EngineBase):
         volume_manager = self.physics_manager.simulation.volume_manager
         g_cm3 = g4.G4UnitDefinition.GetValueOf("g/cm3")
         vacuum_like_max_density = self._MICROELEC_VACUUM_LIKE_MAX_DENSITY * g_cm3
+        wf_overrides = self.physics_manager.microelec_surface_work_functions
 
         # Materials handled in the regions are validated/real; everything else in
         # the geometry that is unsupported and not "Vacuum" needs an alias.
-        tokens = {}
+        # Membership in the supported set uses the human-readable stem, which
+        # strips only a leading "G4_" (e.g. "G4_Cu" -> "Cu").
+        materials = set()
         for vol in volume_manager.volumes.values():
             material = getattr(vol, "material", None)
             if material is None or material == "Vacuum":
@@ -493,12 +506,42 @@ class PhysicsEngine(EngineBase):
             stem = material[3:] if material.startswith("G4_") else material
             if stem in self._MICROELEC_SUPPORTED_MATERIAL_STEMS:
                 continue
-            tokens[material[3:]] = material
-        if not tokens:
+            materials.add(material)
+
+        # A user may list a work-function override for a database material or one
+        # not present in the geometry; the former already has real data we must
+        # not clobber, the latter never reaches the surface table. Warn and ignore.
+        for material in wf_overrides:
+            stem = material[3:] if material.startswith("G4_") else material
+            if stem in self._MICROELEC_SUPPORTED_MATERIAL_STEMS:
+                warning(
+                    f"MicroElec: surface work-function override for '{material}' "
+                    f"is ignored because the material has MicroElec database data; "
+                    f"its tabulated work function is used."
+                )
+            elif material not in materials:
+                warning(
+                    f"MicroElec: surface work-function override for '{material}' "
+                    f"is ignored because no geometry volume uses that material."
+                )
+        if not materials:
             return
 
-        # Reject dense unsupported surrounders instead of assuming they are vacuum.
-        for token, material in tokens.items():
+        # Decide the work function to write for each material: an explicit override
+        # if listed (bypasses the density check), otherwise 0 for a vacuum-like
+        # surrounder (dense unsupported surrounders are rejected).
+        work_functions = {}
+        for material in sorted(materials):
+            if material in wf_overrides:
+                wf = wf_overrides[material]
+                work_functions[material] = wf
+                warning(
+                    f"MicroElec: material '{material}' has no MicroElec data; its "
+                    f"surface work function is set to the user-supplied "
+                    f"{wf / g4.G4UnitDefinition.GetValueOf('eV'):g} eV at region "
+                    f"boundaries."
+                )
+                continue
             density = volume_manager.find_or_build_material(material).GetDensity()
             if density > vacuum_like_max_density:
                 fatal(
@@ -508,40 +551,65 @@ class PhysicsEngine(EngineBase):
                     f"{self._MICROELEC_VACUUM_LIKE_MAX_DENSITY:g} g/cm3). MicroElec "
                     f"has no valid surface/cross-section treatment for it, so it "
                     f"cannot be auto-aliased to vacuum. Use a MicroElec-supported "
-                    f"material, or 'Vacuum'/a vacuum-like material, for volumes "
-                    f"adjacent to the region."
+                    f"material, a 'Vacuum'/vacuum-like material for volumes "
+                    f"adjacent to the region, or give it an explicit work function "
+                    f"via physics_manager.set_microelec_surface_work_function(...)."
                 )
+            work_functions[material] = 0.0
             warning(
                 f"MicroElec: material '{material}' has no MicroElec data; it is "
                 f"vacuum-like (density {density / g_cm3:.3g} g/cm3) and is treated "
                 f"as vacuum (zero work function) at region boundaries."
             )
 
-        # Every per-material file ends with "_<token>.dat"; glob the donor's set
+        # The data-file name a Geant4 call site opens is derived from the material
+        # name in one of two ways depending on the call site: some erase the first
+        # three characters unconditionally ("Brass" -> "ss"), others strip only a
+        # leading "G4_" ("Brass" -> "Brass"). For a NIST "G4_*" name both give the
+        # same token; for a custom name they differ, so we generate a file under
+        # every distinct, non-empty form so whichever the runtime opens exists.
+        def file_tokens(name):
+            forms = {name[3:], name[3:] if name.startswith("G4_") else name}
+            return {t for t in forms if t}
+
+        # Every per-material file ends with "_<template>.dat"; glob the donor's set
         # so this stays correct across G4EMLOW versions/file additions.
         suffix = f"_{template}.dat"
         donor_files = list(microelec_data.glob(f"**/*{suffix}"))
         structure_name = f"Data_{template}.dat"
-        for token in tokens:
-            for src in donor_files:
-                dst = src.with_name(src.name[: -len(suffix)] + f"_{token}.dat")
-                if dst.is_symlink() or dst.exists():
-                    continue
-                try:
-                    if src.name == structure_name:
-                        # Real file with a zeroed work function (see docstring).
-                        dst.write_text(_zero_microelec_work_function(src.read_text()))
-                    else:
-                        dst.symlink_to(src.name)  # relative link within same dir
-                except OSError as e:
-                    fatal(
-                        f"MicroElec requires a data file for material token "
-                        f"'{token}' ({dst.name}) because the material appears in "
-                        f"the geometry, but it could not be created ({e}). The "
-                        f"Geant4 data directory may be read-only. Either make it "
-                        f"writable, use a MicroElec-supported world material, or "
-                        f"name the surrounding material 'Vacuum'."
-                    )
+        for material, wf in work_functions.items():
+            for token in file_tokens(material):
+                for src in donor_files:
+                    dst = src.with_name(src.name[: -len(suffix)] + f"_{token}.dat")
+                    is_structure = src.name == structure_name
+                    # Rewrite the structure file of an override material even if a
+                    # stale copy exists (e.g. a WF=0 file from a previous run): its
+                    # content depends on the override value. Such a file is always
+                    # our own generated file (the material is never in the
+                    # database), so overwriting is safe. Everything else is skipped
+                    # if present.
+                    rewrite = is_structure and material in wf_overrides
+                    if (dst.is_symlink() or dst.exists()) and not rewrite:
+                        continue
+                    try:
+                        if is_structure:
+                            # Real file with the chosen work function (see above).
+                            if dst.is_symlink():
+                                dst.unlink()
+                            dst.write_text(
+                                _set_microelec_work_function(src.read_text(), wf)
+                            )
+                        else:
+                            dst.symlink_to(src.name)  # relative link, same dir
+                    except OSError as e:
+                        fatal(
+                            f"MicroElec requires a data file for material "
+                            f"'{material}' ({dst.name}) because the material appears "
+                            f"in the geometry, but it could not be created ({e}). "
+                            f"The Geant4 data directory may be read-only. Either "
+                            f"make it writable, use a MicroElec-supported world "
+                            f"material, or name the surrounding material 'Vacuum'."
+                        )
 
     def initialize_microelec_physics_regions(self):
         microelec_regions = [
