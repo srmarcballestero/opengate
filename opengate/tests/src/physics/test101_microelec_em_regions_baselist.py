@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Verify that, above the MicroElec thresholds, a MicroElec region reproduces the
-# selected standard EM base list (opt3 or opt4), mirroring TOPAS
-# TsEmMicroElecPhysics. We probe which *standard* model each process selects in
-# the target region:
-#   - proton hIoni: Bragg below 2 MeV, BetheBloch above (both base lists)
-#   - e- eIoni:     opt4 -> Penelope below 100 keV then MollerBhabha;
-#                   opt3 -> MollerBhabha everywhere
-# (The e- msc Urban/GoudsmitSaunderson difference is not probed here: msc is a
-# G4VMultipleScattering, which the check_em_model_in_volume helper does not
-# resolve. The eIoni Penelope-vs-MollerBhabha split already distinguishes the
-# two base lists.)
+# Standard models selected in a MicroElec region above the thresholds, for the
+# opt3 and opt4 base lists:
+#   - proton hIoni: Bragg below 2 MeV, BetheBloch above
+#   - e- eIoni:     opt4: Penelope below 100 keV, MollerBhabha above
+#                   opt3: MollerBhabha
+# (e- msc is not checked: check_em_model_in_volume does not handle
+# G4VMultipleScattering.)
 
 import opengate as gate
 import opengate_core as g4
@@ -19,8 +15,7 @@ from opengate.tests import utility
 
 TARGET_NAME = "target"
 
-# Lower the proton threshold below the 2 MeV Bragg/BetheBloch crossover so a
-# Bragg window [P_MAX, 2 MeV] opens inside the region.
+# Below the 2 MeV Bragg/BetheBloch crossover: Bragg is used in [P_MAX, 2 MeV].
 P_MAX_MeV = 0.5
 
 _MeV_in_eV = 1e6
@@ -37,22 +32,19 @@ PROBE_POINTS = [
 def microelec_hook(simulation_engine):
     eV_unit = g4.G4UnitDefinition.GetValueOf("eV")
     target = simulation_engine.simulation.volume_manager.volumes[TARGET_NAME]
-    results = {}
-    for particle, process, energy_eV, *_ in PROBE_POINTS:
-        # These standard models are active above threshold, so the plain
-        # (name-selected) model query is what we want here.
-        results[(process, energy_eV)] = g4.check_em_model_in_volume(
+    simulation_engine.user_hook_log["models"] = [
+        g4.check_em_model_in_volume(
             target.g4_logical_volume, particle, process, energy_eV * eV_unit
         )
-    simulation_engine.user_hook_log.append(results)
+        for particle, process, energy_eV, *_ in PROBE_POINTS
+    ]
 
 
 def check_baselist(sim, expected_idx, base_list):
-    results = sim.user_hook_log[0]
+    models = sim.user_hook_log["models"]
     is_ok = True
-    for particle, process, energy_eV, *expected in PROBE_POINTS:
+    for (particle, process, energy_eV, *expected), model in zip(PROBE_POINTS, models):
         want = expected[expected_idx]
-        model = results.get((process, energy_eV))
         passed = model is not None and want in str(model)
         label = f"[{base_list}] {process} @ {energy_eV / _MeV_in_eV:g} MeV"
         status = "PASS" if passed else "FAIL"
@@ -103,11 +95,10 @@ def run(base_list, physics_list, expected_idx):
     source.position.translation = [0, 0, -4 * cm]
     source.direction.type = "momentum"
     source.direction.momentum = [0, 0, 1]
-    source.n = 1
+    source.number_of_primaries = 1
 
     sim.add_actor("SimulationStatisticsActor", "stats")
     sim.user_hook_after_run = microelec_hook
-    # A fresh process per base list so both configurations can run in one script.
     sim.run(start_new_process=True)
 
     return check_baselist(sim, expected_idx, base_list)

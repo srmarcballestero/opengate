@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# MicroElec has no valid surface/cross-section treatment for a material that
-# lacks MicroElec data unless that material is vacuum-like (its boundary work
-# function can then be safely forced to 0). A MicroElec region surrounded by a
-# dense, unsupported material (e.g. G4_WATER) therefore cannot be initialized
-# and must be rejected with a clear error rather than silently assumed to be
-# vacuum. This test verifies that rejection.
+# A MicroElec region surrounded by a dense material without MicroElec data
+# (G4_WATER) and without a work-function override is rejected at
+# initialization.
 
 import opengate as gate
 from opengate.tests import utility
@@ -50,15 +47,13 @@ def build_sim(world_material):
     source.position.translation = [0, 0, -4 * cm]
     source.direction.type = "momentum"
     source.direction.momentum = [0, 0, 1]
-    source.n = 1
+    source.number_of_primaries = 1
 
     sim.add_actor("SimulationStatisticsActor", "stats")
     return sim
 
 
 if __name__ == "__main__":
-    # A MicroElec region surrounded by dense, unsupported G4_WATER must be
-    # rejected during initialization.
     sim = build_sim("G4_WATER")
 
     is_ok = False
