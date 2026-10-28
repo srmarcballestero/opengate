@@ -124,7 +124,20 @@ public:
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
 GateG4MicroElecPhysics::GateG4MicroElecPhysics(G4int ver)
-    : G4VPhysicsConstructor("GateG4MicroElecPhysics", ver) {}
+    : G4VPhysicsConstructor("GateG4MicroElecPhysics", ver) {
+  // Set at construction so that G4EmParameters set later (e.g. by the GATE
+  // physics manager) take precedence.
+  G4EmParameters *param = G4EmParameters::Instance();
+  param->SetBuildCSDARange(true);
+  param->SetMinEnergy(0.1 * CLHEP::eV);
+  param->SetMaxEnergy(kTopEnergy);
+  param->SetLowestElectronEnergy(0.0);
+  param->SetNumberOfBinsPerDecade(20);
+  param->ActivateAngularGeneratorForIonisation(true);
+  param->SetFluo(true);
+  param->SetAuger(true);
+  param->SetPixe(true);
+}
 
 //....oooOO0OOooo........oooOO0OOooo........oooOO0OOooo........oooOO0OOooo......
 
@@ -257,18 +270,6 @@ void GateG4MicroElecPhysics::ConstructParticle() {
 void GateG4MicroElecPhysics::ConstructProcess() {
   if (fRegions.empty())
     return;
-
-  // ---- EM parameters: track down to sub-keV energies ----
-  G4EmParameters *param = G4EmParameters::Instance();
-  param->SetBuildCSDARange(true);
-  param->SetMinEnergy(0.1 * CLHEP::eV);
-  param->SetMaxEnergy(kTopEnergy);
-  param->SetLowestElectronEnergy(0.0);
-  param->SetNumberOfBinsPerDecade(20);
-  param->ActivateAngularGeneratorForIonisation(true);
-  param->SetFluo(true);
-  param->SetAuger(true);
-  param->SetPixe(true);
 
   // Processes are global, models per region: a heavy-particle MicroElec
   // process is registered only if at least one region activates it.
