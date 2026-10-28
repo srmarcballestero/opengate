@@ -5,8 +5,8 @@
    See LICENSE.md for further details
    -------------------------------------------------- */
 
-#ifndef GateG4MicroElecPhysics_h
-#define GateG4MicroElecPhysics_h
+#ifndef GateMicroElecPhysics_h
+#define GateMicroElecPhysics_h
 
 #include "CLHEP/Units/SystemOfUnits.h"
 #include "G4String.hh"
@@ -23,10 +23,10 @@ enum class GateMicroElecLowEnergyIonisation { automatic, penelope, none };
 
 // MicroElec track-structure physics in selected regions, on top of a standard
 // EM physics list (opt3 or opt4).
-class GateG4MicroElecPhysics : public G4VPhysicsConstructor {
+class GateMicroElecPhysics : public G4VPhysicsConstructor {
 public:
-  explicit GateG4MicroElecPhysics(G4int ver = 1);
-  ~GateG4MicroElecPhysics() override = default;
+  explicit GateMicroElecPhysics(G4int ver = 1);
+  ~GateMicroElecPhysics() override = default;
 
   void AddRegion(const G4String &regionName);
 

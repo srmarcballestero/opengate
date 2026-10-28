@@ -643,7 +643,7 @@ class PhysicsEngine(EngineBase):
         for region in microelec_regions:
             self._check_microelec_region_consistency(region)
         # Python-side reference to an object registered in a Geant4-owned list.
-        self.g4_microelec_physics_activator = g4.GateG4MicroElecPhysics(
+        self.g4_microelec_physics_activator = g4.GateMicroElecPhysics(
             self.physics_manager.simulation.g4_verbose_level
         )
         activator = self.g4_microelec_physics_activator
@@ -788,7 +788,7 @@ class PhysicsEngine(EngineBase):
             )
         for region in self.physics_manager.regions.values():
             region.initialize_em_switches()
-            # MicroElec regions are configured by GateG4MicroElecPhysics;
+            # MicroElec regions are configured by GateMicroElecPhysics;
             # G4EmParameters::AddMicroElec would activate MicroElec a second time.
             if region.track_structure_em_physics not in (None, "MicroElec"):
                 self.g4_em_parameters.AddDNA(
