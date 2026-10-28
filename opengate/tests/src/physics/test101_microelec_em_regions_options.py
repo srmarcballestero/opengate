@@ -200,6 +200,59 @@ def run_em_parameters():
     return is_ok
 
 
+def run_switching():
+    """A region cannot switch between DNA and MicroElec without a reset to
+    None; DNA options can replace each other."""
+    sim = build_sim("G4EmStandardPhysics_option4")
+    add_target(sim, "a", "G4_Al", -10)
+    add_target(sim, "b", "G4_Al", 10)
+    pm = sim.physics_manager
+
+    def rejected(label, action):
+        try:
+            action()
+        except Exception as e:  # GATE's fatal() raises a plain Exception
+            passed = "cannot be switched" in str(e)
+        else:
+            passed = False
+        print(f"  [{'PASS' if passed else 'FAIL'}] [switching] {label} rejected")
+        return passed
+
+    def accepted(label, action):
+        try:
+            action()
+            passed = True
+        except Exception:
+            passed = False
+        print(f"  [{'PASS' if passed else 'FAIL'}] [switching] {label} accepted")
+        return passed
+
+    pm.set_microelec_em_physics("a")
+    pm.set_track_structure_em_physics("b", "G4EmDNAPhysics_option2")
+    region_a = pm.regions["a_region"]
+    ok = rejected(
+        "MicroElec -> DNA",
+        lambda: pm.set_track_structure_em_physics("a", "G4EmDNAPhysics_option4"),
+    )
+    ok = rejected("DNA -> MicroElec", lambda: pm.set_microelec_em_physics("b")) and ok
+    ok = (
+        accepted(
+            "DNA option2 -> option4",
+            lambda: pm.set_track_structure_em_physics("b", "G4EmDNAPhysics_option4"),
+        )
+        and ok
+    )
+    region_a.track_structure_em_physics = None
+    ok = (
+        accepted(
+            "MicroElec -> None -> DNA",
+            lambda: pm.set_track_structure_em_physics("a", "G4EmDNAPhysics_option2"),
+        )
+        and ok
+    )
+    return ok
+
+
 def run_opt3_inconsistent():
     """opt3 with low_energy_ionisation='penelope' is fatal."""
     sim = build_sim("G4EmStandardPhysics_option3")
@@ -222,5 +275,6 @@ if __name__ == "__main__":
     ok = run_two_regions()
     ok = run_reference_list_all_off() and ok
     ok = run_em_parameters() and ok
+    ok = run_switching() and ok
     ok = run_opt3_inconsistent() and ok
     utility.test_ok(ok)
