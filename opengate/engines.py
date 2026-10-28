@@ -16,9 +16,8 @@ from .physics import (
     cut_particle_names,
     create_g4_optical_properties_table,
     load_optical_properties_from_xml,
-    PhysicsListBuilder,
-    _split_reference_physics_list_name,
-    reference_physics_list_em_extensions,
+    microelec_supported_material_stems,
+    microelec_material_stem,
 )
 from .base import GateSingletonFatal
 from .logger import logger
@@ -417,47 +416,9 @@ class PhysicsEngine(EngineBase):
         )
         self.g4_augmented_physics_list.RegisterPhysics(self.g4_dna_physics_activator)
 
-    # Materials with MicroElec data in G4EMLOW/microelec, without the "G4_" prefix.
-    _MICROELEC_SUPPORTED_MATERIAL_STEMS = frozenset(
-        [
-            "Al",
-            "ALUMINUM_OXIDE",
-            "Ag",
-            "Au",
-            "BORON_NITRIDE",
-            "Be",
-            "C",
-            "Cu",
-            "Fe",
-            "Ge",
-            "KAPTON",
-            "Ni",
-            "Si",
-            "SILICON_DIOXIDE",
-            "Ti",
-            "TITANIUM_NITRIDE",
-            "W",
-        ]
-    )
-
     # Max density of a material without MicroElec data that is treated as vacuum
     # (work function 0) at MicroElec region boundaries. Air is ~1.2e-3 g/cm3.
     _MICROELEC_VACUUM_LIKE_MAX_DENSITY = 1e-2  # g/cm3
-
-    def _check_microelec_material(
-        self,
-        volume_name: str,
-        material_name: str,
-    ) -> None:
-        """Fatal if ``material_name`` has no MicroElec data."""
-        stem = material_name[3:] if material_name.startswith("G4_") else material_name
-        if stem not in self._MICROELEC_SUPPORTED_MATERIAL_STEMS:
-            supported = ", ".join(sorted(self._MICROELEC_SUPPORTED_MATERIAL_STEMS))
-            fatal(
-                f"Volume '{volume_name}' uses material '{material_name}', which is not supported "
-                f"by the MicroElec physics models. MicroElec data files are only available for: "
-                f"{supported}."
-            )
 
     def _microelec_alias_unsupported_materials(self, microelec_regions):
         """Create MicroElec data files for every geometry material without
@@ -495,14 +456,12 @@ class PhysicsEngine(EngineBase):
             material = getattr(vol, "material", None)
             if material is None or material == "Vacuum":
                 continue
-            stem = material[3:] if material.startswith("G4_") else material
-            if stem in self._MICROELEC_SUPPORTED_MATERIAL_STEMS:
+            if microelec_material_stem(material) in microelec_supported_material_stems:
                 continue
             materials.add(material)
 
         for material in wf_overrides:
-            stem = material[3:] if material.startswith("G4_") else material
-            if stem in self._MICROELEC_SUPPORTED_MATERIAL_STEMS:
+            if microelec_material_stem(material) in microelec_supported_material_stems:
                 warning(
                     f"MicroElec: surface work-function override for '{material}' "
                     f"is ignored because the material has MicroElec database data; "
@@ -586,44 +545,6 @@ class PhysicsEngine(EngineBase):
                             f"material, or name the surrounding material 'Vacuum'."
                         )
 
-    # EM constructor matching each MicroElec base list.
-    _MICROELEC_BASE_LIST_EM_CONSTRUCTORS = {
-        "opt3": "G4EmStandardPhysics_option3",
-        "opt4": "G4EmStandardPhysics_option4",
-    }
-
-    def _physics_list_em_constructor_name(self):
-        """Name of the EM constructor used by the simulation physics list."""
-        name = self.physics_manager.physics_list_name
-        if name in PhysicsListBuilder.available_g4_physics_constructors:
-            return name
-        _, suffix = _split_reference_physics_list_name(name)
-        # No suffix or "_EM0": default EM (opt0).
-        return reference_physics_list_em_extensions.get(suffix) or "G4EmStandardPhysics"
-
-    def _check_microelec_region_consistency(self, region):
-        """Fatal if the low-energy ionisation is inconsistent with the base list;
-        warning if the base list does not match the physics list."""
-        base_list = region.microelec_base_list
-        lei = region.microelec_low_energy_ionisation
-        if base_list == "opt3" and lei not in (None, "none"):
-            fatal(
-                f"MicroElec region '{region.name}': low_energy_ionisation='{lei}' "
-                f"is not consistent with base_list='opt3', which uses MollerBhabha "
-                f"over the whole range. Use low_energy_ionisation='none' (or leave "
-                f"it unset) with opt3."
-            )
-        expected = self._MICROELEC_BASE_LIST_EM_CONSTRUCTORS[base_list]
-        actual = self._physics_list_em_constructor_name()
-        if actual != expected:
-            warning(
-                f"MicroElec region '{region.name}' uses base_list='{base_list}', "
-                f"which reproduces {expected} above the MicroElec thresholds, but "
-                f"the physics list '{self.physics_manager.physics_list_name}' uses "
-                f"{actual} as EM constructor. The models inside and outside the "
-                f"region will be inconsistent."
-            )
-
     def initialize_microelec_physics_regions(self):
         microelec_regions = [
             region
@@ -632,16 +553,7 @@ class PhysicsEngine(EngineBase):
         ]
         if not microelec_regions:
             return
-        volume_manager = self.physics_manager.simulation.volume_manager
-        for region in microelec_regions:
-            for volume_name in region.root_logical_volumes:
-                vol = volume_manager.volumes.get(volume_name)
-                if vol is not None and vol.material is not None:
-                    self._check_microelec_material(volume_name, vol.material)
-
         self._microelec_alias_unsupported_materials(microelec_regions)
-        for region in microelec_regions:
-            self._check_microelec_region_consistency(region)
         # Python-side reference to an object registered in a Geant4-owned list.
         self.g4_microelec_physics_activator = g4.GateMicroElecPhysics(
             self.physics_manager.simulation.g4_verbose_level

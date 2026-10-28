@@ -418,6 +418,48 @@ class PhysicsListBuilder(GateObject):
         return s
 
 
+# Materials with MicroElec data in G4EMLOW/microelec, without the "G4_" prefix.
+microelec_supported_material_stems = frozenset(
+    [
+        "Al",
+        "ALUMINUM_OXIDE",
+        "Ag",
+        "Au",
+        "BORON_NITRIDE",
+        "Be",
+        "C",
+        "Cu",
+        "Fe",
+        "Ge",
+        "KAPTON",
+        "Ni",
+        "Si",
+        "SILICON_DIOXIDE",
+        "Ti",
+        "TITANIUM_NITRIDE",
+        "W",
+    ]
+)
+
+
+def microelec_material_stem(material_name):
+    """``material_name`` without a leading "G4_"."""
+    return material_name[3:] if material_name.startswith("G4_") else material_name
+
+
+def physics_list_em_constructor_name(physics_list_name):
+    """Name of the EM constructor used by a GATE physics list."""
+    if physics_list_name in PhysicsListBuilder.available_g4_physics_constructors:
+        return physics_list_name
+    _, suffix = _split_reference_physics_list_name(physics_list_name)
+    # No suffix or "_EM0": default EM (opt0).
+    return reference_physics_list_em_extensions.get(suffix) or "G4EmStandardPhysics"
+
+
+def _setter_hook_lowercase(self, value):
+    return value.lower() if isinstance(value, str) else value
+
+
 def _setter_hook_track_structure_em_physics(self, track_structure_em_physics):
     current = self.user_info["track_structure_em_physics"]
     if (
@@ -448,6 +490,14 @@ class Region(GateObject):
     available_track_structure_em_physics = available_dna_em_physics + ("MicroElec",)
     available_microelec_base_lists = ("opt3", "opt4")
     available_microelec_low_energy_ionisation = ("penelope", "none")
+    # MicroElec inelastic data limits.
+    _microelec_electron_threshold_max = 10 * g4_units.keV
+    _microelec_proton_threshold_max = 10 * g4_units.MeV
+    # EM constructor matching each MicroElec base list.
+    _microelec_base_list_em_constructors = {
+        "opt3": "G4EmStandardPhysics_option3",
+        "opt4": "G4EmStandardPhysics_option4",
+    }
 
     user_info_defaults = {}
     user_info_defaults["user_limits"] = (
@@ -537,6 +587,7 @@ class Region(GateObject):
             "of physics_list_name (G4EmStandardPhysics_option3 / *_EMY or "
             "G4EmStandardPhysics_option4 / *_EMZ).",
             "allowed_values": available_microelec_base_lists,
+            "setter_hook": _setter_hook_lowercase,
         },
     )
     user_info_defaults["microelec_low_energy_ionisation"] = (
@@ -546,6 +597,7 @@ class Region(GateObject):
             "100 keV: 'penelope' or 'none' (MollerBhabha only). None: penelope "
             "for opt4, none for opt3. opt3 accepts only 'none'.",
             "allowed_values": available_microelec_low_energy_ionisation + (None,),
+            "setter_hook": _setter_hook_lowercase,
         },
     )
     user_info_defaults["microelec_activate_proton_models"] = (
@@ -669,6 +721,68 @@ class Region(GateObject):
         # Python volume objects that will later receive their G4 logical volumes
         # during geometry construction.
         self.resolve_root_logical_volumes()
+        if self.track_structure_em_physics == "MicroElec":
+            self._validate_microelec_config()
+
+    def _validate_microelec_config(self):
+        for name, value, value_max in (
+            (
+                "microelec_electron_threshold",
+                self.microelec_electron_threshold,
+                self._microelec_electron_threshold_max,
+            ),
+            (
+                "microelec_proton_threshold",
+                self.microelec_proton_threshold,
+                self._microelec_proton_threshold_max,
+            ),
+        ):
+            if not isinstance(value, (int, float)) or value <= 0:
+                fatal(
+                    f"Region '{self.name}': {name} must be a positive energy "
+                    f"(in Geant4 units), got {value!r}."
+                )
+            if value > value_max:
+                warning(
+                    f"Region '{self.name}': {name}={value / g4_units.MeV:g} MeV "
+                    f"exceeds the MicroElec data limit ({value_max / g4_units.MeV:g} "
+                    f"MeV) and is capped to it."
+                )
+
+        base_list = self.microelec_base_list
+        lei = self.microelec_low_energy_ionisation
+        if base_list == "opt3" and lei not in (None, "none"):
+            fatal(
+                f"MicroElec region '{self.name}': low_energy_ionisation='{lei}' "
+                f"is not consistent with base_list='opt3', which uses MollerBhabha "
+                f"over the whole range. Use low_energy_ionisation='none' (or leave "
+                f"it unset) with opt3."
+            )
+        physics_list_name = self.physics_manager.physics_list_name
+        expected = self._microelec_base_list_em_constructors[base_list]
+        actual = physics_list_em_constructor_name(physics_list_name)
+        if actual != expected:
+            warning(
+                f"MicroElec region '{self.name}' uses base_list='{base_list}', "
+                f"which reproduces {expected} above the MicroElec thresholds, but "
+                f"the physics list '{physics_list_name}' uses {actual} as EM "
+                f"constructor. The models inside and outside the region will be "
+                f"inconsistent."
+            )
+
+        for volume_name, volume in self.root_logical_volumes.items():
+            material = volume.material
+            if (
+                material is not None
+                and microelec_material_stem(material)
+                not in microelec_supported_material_stems
+            ):
+                supported = ", ".join(sorted(microelec_supported_material_stems))
+                fatal(
+                    f"Volume '{volume_name}' uses material '{material}', which is "
+                    f"not supported by the MicroElec physics models. MicroElec data "
+                    f"files are only available for: {supported}."
+                )
 
     def dump_production_cuts(self):
         s = ""

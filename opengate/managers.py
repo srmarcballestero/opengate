@@ -1155,24 +1155,6 @@ class PhysicsManager(GateObject):
         region.track_structure_em_physics = track_structure_em_physics
 
     # --- MicroElec ----------------------------------------------------------
-    # MicroElec inelastic data limits.
-    _microelec_electron_threshold_ceiling = 10 * g4_units.keV
-    _microelec_proton_threshold_ceiling = 10 * g4_units.MeV
-
-    def _validate_microelec_threshold(self, region, name, value, ceiling):
-        if not isinstance(value, (int, float)) or value <= 0:
-            fatal(
-                f"MicroElec {name} for region {region.name} must be a positive "
-                f"energy (in Geant4 units), got {value!r}."
-            )
-        if value > ceiling:
-            warning(
-                f"MicroElec {name}={value / g4_units.MeV:g} MeV for region "
-                f"{region.name} exceeds the MicroElec data-validity ceiling "
-                f"({ceiling / g4_units.MeV:g} MeV); it is clamped to that ceiling "
-                f"(the MicroElec models cannot be used above it)."
-            )
-
     def _set_region_microelec_em_physics(
         self,
         region,
@@ -1185,48 +1167,17 @@ class PhysicsManager(GateObject):
         activate_ion_models=None,
     ):
         region.track_structure_em_physics = "MicroElec"
-        if electron_threshold is not None:
-            self._validate_microelec_threshold(
-                region,
-                "electron_threshold",
-                electron_threshold,
-                self._microelec_electron_threshold_ceiling,
-            )
-            region.user_info["microelec_electron_threshold"] = electron_threshold
-        if proton_threshold is not None:
-            self._validate_microelec_threshold(
-                region,
-                "proton_threshold",
-                proton_threshold,
-                self._microelec_proton_threshold_ceiling,
-            )
-            region.user_info["microelec_proton_threshold"] = proton_threshold
-        if base_list is not None:
-            base_list = str(base_list).lower()
-            allowed_bl = Region.available_microelec_base_lists
-            if base_list not in allowed_bl:
-                fatal(
-                    f"Illegal MicroElec base_list '{base_list}' for region "
-                    f"{region.name}. Allowed values are: {list(allowed_bl)}."
-                )
-            region.user_info["microelec_base_list"] = base_list
-        if low_energy_ionisation is not None:
-            low_energy_ionisation = str(low_energy_ionisation).lower()
-            allowed_lei = Region.available_microelec_low_energy_ionisation
-            if low_energy_ionisation not in allowed_lei:
-                fatal(
-                    f"Illegal MicroElec low_energy_ionisation "
-                    f"'{low_energy_ionisation}' for region {region.name}. "
-                    f"Allowed values are: {list(allowed_lei)}."
-                )
-            region.user_info["microelec_low_energy_ionisation"] = low_energy_ionisation
-        for key, value in (
+        for attribute, value in (
+            ("microelec_electron_threshold", electron_threshold),
+            ("microelec_proton_threshold", proton_threshold),
+            ("microelec_base_list", base_list),
+            ("microelec_low_energy_ionisation", low_energy_ionisation),
             ("microelec_activate_proton_models", activate_proton_models),
             ("microelec_activate_alpha_models", activate_alpha_models),
             ("microelec_activate_ion_models", activate_ion_models),
         ):
             if value is not None:
-                region.user_info[key] = bool(value)
+                setattr(region, attribute, value)
 
     def set_microelec_em_physics(self, volume_name, **kwargs):
         """Use MicroElec track-structure EM physics in the region of a volume.
