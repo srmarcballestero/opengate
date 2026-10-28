@@ -229,8 +229,14 @@ void init_G4PhysicsLists(py::module &m) {
       .def("SetRegionProtonThreshold",
            &GateG4MicroElecPhysics::SetRegionProtonThreshold)
       .def("SetRegionBaseList", &GateG4MicroElecPhysics::SetRegionBaseList)
-      .def("SetRegionUsePenelope",
-           &GateG4MicroElecPhysics::SetRegionUsePenelope);
+      .def("SetRegionLowEnergyIonisation",
+           &GateG4MicroElecPhysics::SetRegionLowEnergyIonisation)
+      .def("SetRegionActivateProtonModels",
+           &GateG4MicroElecPhysics::SetRegionActivateProtonModels)
+      .def("SetRegionActivateAlphaModels",
+           &GateG4MicroElecPhysics::SetRegionActivateAlphaModels)
+      .def("SetRegionActivateIonModels",
+           &GateG4MicroElecPhysics::SetRegionActivateIonModels);
   ADD_CHEMISTRY_LIST(G4EmDNAChemistry)
   ADD_CHEMISTRY_LIST(G4EmDNAChemistry_option1)
   ADD_CHEMISTRY_LIST(G4EmDNAChemistry_option2)

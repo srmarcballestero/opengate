@@ -16,6 +16,9 @@ from .physics import (
     cut_particle_names,
     create_g4_optical_properties_table,
     load_optical_properties_from_xml,
+    PhysicsListBuilder,
+    _split_reference_physics_list_name,
+    reference_physics_list_em_extensions,
 )
 from .base import GateSingletonFatal
 from .logger import logger
@@ -41,13 +44,8 @@ def _translate_track_structure_em_physics_to_geant4(track_structure_em_physics):
 
 
 def _set_microelec_work_function(structure_text: str, work_function: float) -> str:
-    """Return a MicroElec structure file with its ``WorkFunction`` value replaced.
-
-    Structure files are plain text with one field per line, e.g.
-    ``1 WorkFunction eV 4.05``. We rewrite the ``WorkFunction`` line to carry
-    ``work_function`` (given in Geant4 internal units), always emitting it in eV
-    (a unit the MicroElec structure-file parser understands). All other fields
-    are preserved.
+    """Return ``structure_text`` (a MicroElec structure file) with its
+    ``WorkFunction`` line set to ``work_function`` (Geant4 units), written in eV.
     """
     value_ev = work_function / g4.G4UnitDefinition.GetValueOf("eV")
     out = []
@@ -407,9 +405,6 @@ class PhysicsEngine(EngineBase):
         self.initialize_parallel_world_physics()
 
     def initialize_dna_physics_regions(self):
-        # "MicroElec" is carried by the same track_structure_em_physics attribute
-        # but uses a dedicated activator (see initialize_microelec_physics_regions),
-        # so the DNA activator must ignore it.
         if not any(
             region.track_structure_em_physics not in (None, "MicroElec")
             for region in self.physics_manager.regions.values()
@@ -422,8 +417,7 @@ class PhysicsEngine(EngineBase):
         )
         self.g4_augmented_physics_list.RegisterPhysics(self.g4_dna_physics_activator)
 
-    # Materials for which Geant4 ships MicroElec cross-section data (G4EMLOW
-    # microelec/). The stems match the material-name suffix after "G4_".
+    # Materials with MicroElec data in G4EMLOW/microelec, without the "G4_" prefix.
     _MICROELEC_SUPPORTED_MATERIAL_STEMS = frozenset(
         [
             "Al",
@@ -446,12 +440,8 @@ class PhysicsEngine(EngineBase):
         ]
     )
 
-    # Max density for an unsupported surrounding material to be treated as
-    # vacuum at MicroElec region boundaries (work function 0). Covers vacuum
-    # placeholders and thin gases (e.g. G4_Galactic ~1e-25, air ~1.2e-3). Denser
-    # materials are rejected rather than silently assumed to be vacuum.
-    # Plain number in g/cm3; converted to Geant4 internal units at the point of
-    # comparison (multiplied by g_cm3 there).
+    # Max density of a material without MicroElec data that is treated as vacuum
+    # (work function 0) at MicroElec region boundaries. Air is ~1.2e-3 g/cm3.
     _MICROELEC_VACUUM_LIKE_MAX_DENSITY = 1e-2  # g/cm3
 
     def _check_microelec_material(
@@ -459,7 +449,7 @@ class PhysicsEngine(EngineBase):
         volume_name: str,
         material_name: str,
     ) -> None:
-        """Check that a material is supported by microelec."""
+        """Fatal if ``material_name`` has no MicroElec data."""
         stem = material_name[3:] if material_name.startswith("G4_") else material_name
         if stem not in self._MICROELEC_SUPPORTED_MATERIAL_STEMS:
             supported = ", ".join(sorted(self._MICROELEC_SUPPORTED_MATERIAL_STEMS))
@@ -470,48 +460,27 @@ class PhysicsEngine(EngineBase):
             )
 
     def _microelec_alias_unsupported_materials(self, microelec_regions):
-        """Work around a Geant4 limitation.
+        """Create MicroElec data files for every geometry material without
+        MicroElec data (except "Vacuum").
 
-        ``G4MicroElec{Elastic,Inelastic}Model_new::Initialise()`` builds
-        cross-section tables for every material-cuts couple in the geometry,
-        not just the MicroElec regions, and raises a FatalException when a data
-        file is missing. ``G4MicroElecSurface`` likewise builds a work-function
-        table for every couple. The only material all of them skip is the one
-        literally named "Vacuum".
+        The MicroElec models and ``G4MicroElecSurface`` load data for every
+        material-cuts couple, also outside the MicroElec regions, and abort on a
+        missing file. Cross-section files are symlinks to the files of a
+        supported material; they are never used, since the models outside the
+        regions are ``G4DummyModel``. The structure file is a copy with its work
+        function set to:
 
-        Outside the registered regions the active elastic/inelastic model is
-        ``G4DummyModel``, so those cross-section tables are never selected and
-        thus never used at run time. We therefore satisfy their file appetite by
-        symlinking the data files of a supported donor material under the name
-        of every unsupported, non-"Vacuum" material in the geometry.
+        - the value in ``physics_manager.microelec_surface_work_functions``, if
+          the material is listed;
+        - otherwise 0 (vacuum), which requires a density below
+          ``_MICROELEC_VACUUM_LIKE_MAX_DENSITY``; denser materials are fatal.
 
-        The work function, however, is used: ``G4MicroElecSurface`` reads it for
-        both materials at every boundary crossing and applies their difference as
-        a surface barrier. Symlinking the donor's structure file would silently
-        give the surrounding material the donor's work function. We therefore
-        write the structure file with an explicit ``WorkFunction``:
-
-        - For a vacuum-like surrounder (default): 0, which makes it behave exactly
-          like true "Vacuum" at the boundary (the surface process hardcodes 0 for
-          "Vacuum"). This is both inert and physically correct for such a material.
-          Because the work function is forced to 0, this is only valid for
-          materials that really are vacuum-like, so it is applied only below a
-          density threshold; a denser unsupported surrounder (e.g. water, a solid)
-          has no valid MicroElec surface treatment and is rejected with a clear
-          error rather than being silently assumed to be vacuum.
-
-        - For a material listed in
-          ``physics_manager.microelec_surface_work_functions``: the user-supplied
-          work function. This is the opt-in escape hatch for a non-database bulk
-          that touches a region through a thin database skin (e.g. a G4_Cu skin
-          around a Brass core): setting the bulk's work function equal to the
-          skin's makes their difference (the interface barrier) zero, so the
-          metal-metal contact is transparent instead of imposing a spurious escape
-          barrier. Listed materials bypass the vacuum density check.
+        ``G4MicroElecSurface`` uses the work-function difference of the two
+        materials at a boundary as the surface barrier.
         """
         from pathlib import Path
 
-        template = "Si"  # could be any microelec material
+        template = "Si"  # any material with MicroElec data
         microelec_data = Path(g4.get_g4_data_paths()["G4LEDATA"]) / "microelec"
         if not microelec_data.is_dir():
             return
@@ -521,10 +490,6 @@ class PhysicsEngine(EngineBase):
         vacuum_like_max_density = self._MICROELEC_VACUUM_LIKE_MAX_DENSITY * g_cm3
         wf_overrides = self.physics_manager.microelec_surface_work_functions
 
-        # Materials handled in the regions are validated/real; everything else in
-        # the geometry that is unsupported and not "Vacuum" needs an alias.
-        # Membership in the supported set uses the human-readable stem, which
-        # strips only a leading "G4_" (e.g. "G4_Cu" -> "Cu").
         materials = set()
         for vol in volume_manager.volumes.values():
             material = getattr(vol, "material", None)
@@ -535,9 +500,6 @@ class PhysicsEngine(EngineBase):
                 continue
             materials.add(material)
 
-        # A user may list a work-function override for a database material or one
-        # not present in the geometry; the former already has real data we must
-        # not clobber, the latter never reaches the surface table. Warn and ignore.
         for material in wf_overrides:
             stem = material[3:] if material.startswith("G4_") else material
             if stem in self._MICROELEC_SUPPORTED_MATERIAL_STEMS:
@@ -554,9 +516,6 @@ class PhysicsEngine(EngineBase):
         if not materials:
             return
 
-        # Decide the work function to write for each material: an explicit override
-        # if listed (bypasses the density check), otherwise 0 for a vacuum-like
-        # surrounder (dense unsupported surrounders are rejected).
         work_functions = {}
         for material in sorted(materials):
             if material in wf_overrides:
@@ -589,18 +548,13 @@ class PhysicsEngine(EngineBase):
                 f"as vacuum (zero work function) at region boundaries."
             )
 
-        # The data-file name a Geant4 call site opens is derived from the material
-        # name in one of two ways depending on the call site: some erase the first
-        # three characters unconditionally ("Brass" -> "ss"), others strip only a
-        # leading "G4_" ("Brass" -> "Brass"). For a NIST "G4_*" name both give the
-        # same token; for a custom name they differ, so we generate a file under
-        # every distinct, non-empty form so whichever the runtime opens exists.
+        # Geant4 derives the file name from the material name either by erasing
+        # the first three characters ("Brass" -> "ss") or by stripping a leading
+        # "G4_" ("Brass" -> "Brass"), depending on the call site.
         def file_tokens(name):
             forms = {name[3:], name[3:] if name.startswith("G4_") else name}
             return {t for t in forms if t}
 
-        # Every per-material file ends with "_<template>.dat"; glob the donor's set
-        # so this stays correct across G4EMLOW versions/file additions.
         suffix = f"_{template}.dat"
         donor_files = list(microelec_data.glob(f"**/*{suffix}"))
         structure_name = f"Data_{template}.dat"
@@ -609,18 +563,12 @@ class PhysicsEngine(EngineBase):
                 for src in donor_files:
                     dst = src.with_name(src.name[: -len(suffix)] + f"_{token}.dat")
                     is_structure = src.name == structure_name
-                    # Rewrite the structure file of an override material even if a
-                    # stale copy exists (e.g. a WF=0 file from a previous run): its
-                    # content depends on the override value. Such a file is always
-                    # our own generated file (the material is never in the
-                    # database), so overwriting is safe. Everything else is skipped
-                    # if present.
+                    # Structure files of listed materials depend on the value.
                     rewrite = is_structure and material in wf_overrides
                     if (dst.is_symlink() or dst.exists()) and not rewrite:
                         continue
                     try:
                         if is_structure:
-                            # Real file with the chosen work function (see above).
                             if dst.is_symlink():
                                 dst.unlink()
                             dst.write_text(
@@ -638,6 +586,44 @@ class PhysicsEngine(EngineBase):
                             f"material, or name the surrounding material 'Vacuum'."
                         )
 
+    # EM constructor matching each MicroElec base list.
+    _MICROELEC_BASE_LIST_EM_CONSTRUCTORS = {
+        "opt3": "G4EmStandardPhysics_option3",
+        "opt4": "G4EmStandardPhysics_option4",
+    }
+
+    def _physics_list_em_constructor_name(self):
+        """Name of the EM constructor used by the simulation physics list."""
+        name = self.physics_manager.physics_list_name
+        if name in PhysicsListBuilder.available_g4_physics_constructors:
+            return name
+        _, suffix = _split_reference_physics_list_name(name)
+        # No suffix or "_EM0": default EM (opt0).
+        return reference_physics_list_em_extensions.get(suffix) or "G4EmStandardPhysics"
+
+    def _check_microelec_region_consistency(self, region):
+        """Fatal if the low-energy ionisation is inconsistent with the base list;
+        warning if the base list does not match the physics list."""
+        base_list = region.microelec_base_list
+        lei = region.microelec_low_energy_ionisation
+        if base_list == "opt3" and lei not in (None, "none"):
+            fatal(
+                f"MicroElec region '{region.name}': low_energy_ionisation='{lei}' "
+                f"is not consistent with base_list='opt3', which uses MollerBhabha "
+                f"over the whole range. Use low_energy_ionisation='none' (or leave "
+                f"it unset) with opt3."
+            )
+        expected = self._MICROELEC_BASE_LIST_EM_CONSTRUCTORS[base_list]
+        actual = self._physics_list_em_constructor_name()
+        if actual != expected:
+            warning(
+                f"MicroElec region '{region.name}' uses base_list='{base_list}', "
+                f"which reproduces {expected} above the MicroElec thresholds, but "
+                f"the physics list '{self.physics_manager.physics_list_name}' uses "
+                f"{actual} as EM constructor. The models inside and outside the "
+                f"region will be inconsistent."
+            )
+
     def initialize_microelec_physics_regions(self):
         microelec_regions = [
             region
@@ -654,25 +640,34 @@ class PhysicsEngine(EngineBase):
                     self._check_microelec_material(volume_name, vol.material)
 
         self._microelec_alias_unsupported_materials(microelec_regions)
-        # Keep a Python ref to the activator (created on the Python side, then
-        # registered into a Geant4-owned physics list).
+        for region in microelec_regions:
+            self._check_microelec_region_consistency(region)
+        # Python-side reference to an object registered in a Geant4-owned list.
         self.g4_microelec_physics_activator = g4.GateG4MicroElecPhysics(
             self.physics_manager.simulation.g4_verbose_level
         )
+        activator = self.g4_microelec_physics_activator
         for region in microelec_regions:
-            self.g4_microelec_physics_activator.AddRegion(region.name)
-            self.g4_microelec_physics_activator.SetRegionBaseList(
-                region.name, region.microelec_base_list
+            activator.AddRegion(region.name)
+            activator.SetRegionBaseList(region.name, region.microelec_base_list)
+            activator.SetRegionLowEnergyIonisation(
+                region.name,
+                region.microelec_low_energy_ionisation or "automatic",
             )
-            self.g4_microelec_physics_activator.SetRegionUsePenelope(
-                region.name, bool(region.microelec_use_penelope)
-            )
-            # MicroElec -> base-list handoff energies.
-            self.g4_microelec_physics_activator.SetRegionElectronThreshold(
+            activator.SetRegionElectronThreshold(
                 region.name, region.microelec_electron_threshold
             )
-            self.g4_microelec_physics_activator.SetRegionProtonThreshold(
+            activator.SetRegionProtonThreshold(
                 region.name, region.microelec_proton_threshold
+            )
+            activator.SetRegionActivateProtonModels(
+                region.name, bool(region.microelec_activate_proton_models)
+            )
+            activator.SetRegionActivateAlphaModels(
+                region.name, bool(region.microelec_activate_alpha_models)
+            )
+            activator.SetRegionActivateIonModels(
+                region.name, bool(region.microelec_activate_ion_models)
             )
         self.g4_augmented_physics_list.RegisterPhysics(
             self.g4_microelec_physics_activator
@@ -793,11 +788,8 @@ class PhysicsEngine(EngineBase):
             )
         for region in self.physics_manager.regions.values():
             region.initialize_em_switches()
-            # "MicroElec" is handled by GateG4MicroElecPhysics (registered in
-            # initialize_microelec_physics_regions), which reads its own region
-            # list. AddMicroElec is intentionally NOT called here because it would
-            # trigger G4EmModelActivator::ActivateMicroElec inside the standard EM
-            # constructor, causing double-activation.
+            # MicroElec regions are configured by GateG4MicroElecPhysics;
+            # G4EmParameters::AddMicroElec would activate MicroElec a second time.
             if region.track_structure_em_physics not in (None, "MicroElec"):
                 self.g4_em_parameters.AddDNA(
                     region.name,

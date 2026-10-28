@@ -1,24 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Verify that Geant4 actually CONSUMES the MicroElec surface work-function
-# override -- not merely that GATE writes the data file (that is checked by
-# test101_microelec_em_regions_workfunction.py).
+# Effect of the surface work-function override on the deposited energy.
 #
-# G4MicroElecSurface applies the work-function difference across an interface as
-# a barrier: an electron crossing Cu -> Brass has WF_Cu - WF_Brass removed from
-# its kinetic energy, and that energy is NOT deposited anywhere. So the total
-# energy deposited in the geometry decreases as the barrier grows. Cu's tabulated
-# work function is 4.2 eV, so:
-#   - Brass override = 4.2 eV  -> barrier 0     -> ~all primary energy deposited
-#   - Brass override = 0.02 eV -> barrier ~4.2  -> less energy deposited
+# G4MicroElecSurface removes WF_Cu - WF_Brass from the kinetic energy of an
+# electron crossing Cu -> Brass, and that energy is not deposited. With
+# WF_Cu = 4.2 eV:
+#   - Brass override = 4.2 eV  -> barrier 0    -> ~all primary energy deposited
+#   - Brass override = 0.02 eV -> barrier ~4.2 -> less energy deposited
 #
-# We fire 50 eV electrons (well above the barrier, so they cross) from a thin Cu
-# slab (MicroElec region) into a surrounding Brass block, with IDENTICAL primary
-# histories (same seed) for the two runs, so the ONLY difference is the Brass
-# work function. A monotonic, significant change in the deposited energy proves
-# the surface process reads our per-material value; if it ignored the override,
-# the two totals would be identical.
+# 50 eV electrons start in a thin Cu slab (MicroElec region) inside a Brass
+# block; both runs use the same seed.
 
 from pathlib import Path
 
@@ -84,11 +76,9 @@ def build_sim(brass_wf_eV, tag):
     src.position.translation = [0, 0, 4.5 * nm]  # 0.5 nm from the +z Cu face (z=5nm)
     src.direction.type = "momentum"
     src.direction.momentum = [0, 0, 1]
-    src.n = N_PRIMARIES
+    src.number_of_primaries = N_PRIMARIES
 
-    # Total energy deposited: a single voxel spanning the whole world. The barrier
-    # energy removed at the interface never appears here, so this shrinks with the
-    # barrier.
+    # Total energy deposited: a single voxel spanning the whole world.
     dose = sim.add_actor("DoseActor", "dose_total")
     dose.attached_to = "world"
     dose.size = [1, 1, 1]
@@ -124,8 +114,6 @@ if __name__ == "__main__":
     retained_ok = mean_no_barrier > 49.0
     # Raising the barrier measurably removes energy at the interface.
     barrier_ok = mean_barrier < 48.0
-    # The effect is significant and in the expected direction: only the Brass work
-    # function changed between the two runs, so any change proves Geant4 uses it.
     effect_ok = drop > 1.0
 
     for label, ok in [

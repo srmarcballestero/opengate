@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Reproduce some microelec configurations and dump the geant4 output to files,
-# to be reviewed manually.
+# Dumps the Geant4 EM output of several MicroElec configurations to files, for
+# manual review.
 
 import os
 import sys
@@ -13,14 +13,14 @@ from opengate.tests import utility
 
 TARGET_NAME = "target"
 CONFIGS = [
-    # name         physics_list              base   e-thr  penelope
+    # name         physics_list              base   e-thr  low-E ionisation
     ("opt3", "G4EmStandardPhysics_option3", "opt3", None, None),
     ("opt3_1keV", "G4EmStandardPhysics_option3", "opt3", 1.0, None),
     ("opt3_10keV", "G4EmStandardPhysics_option3", "opt3", 10.0, None),
     ("opt4", "G4EmStandardPhysics_option4", "opt4", None, None),
     ("opt4_1keV", "G4EmStandardPhysics_option4", "opt4", 1.0, None),
     ("opt4_10keV", "G4EmStandardPhysics_option4", "opt4", 10.0, None),
-    ("opt4_nopen_1keV", "G4EmStandardPhysics_option4", "opt4", 1.0, False),
+    ("opt4_nopen_1keV", "G4EmStandardPhysics_option4", "opt4", 1.0, "none"),
 ]
 
 
@@ -50,7 +50,7 @@ def redirect_all_output_to(path):
             os.close(saved_err)
 
 
-def build_sim(physics_list, base_list, thr_keV, use_penelope):
+def build_sim(physics_list, base_list, thr_keV, low_energy_ionisation):
     sim = gate.Simulation()
     sim.visu = False
     sim.random_engine = "MersenneTwister"
@@ -75,7 +75,7 @@ def build_sim(physics_list, base_list, thr_keV, use_penelope):
 
     sim.volume_manager.add_material_database("opengate/contrib/GateMaterials.db")
 
-    # G4_Al cylinder, RMax = 1 mm, half-length = 1 mm (TOPAS TsCylinder).
+    # G4_Al cylinder, RMax = 1 mm, half-length = 1 mm.
     target = sim.add_volume("Tubs", TARGET_NAME)
     target.rmin = 0
     target.rmax = 1 * mm
@@ -92,8 +92,8 @@ def build_sim(physics_list, base_list, thr_keV, use_penelope):
             "electron_threshold": thr_keV * keV,
             "base_list": base_list,
         }
-        if use_penelope is not None:
-            kwargs["use_penelope"] = use_penelope
+        if low_energy_ionisation is not None:
+            kwargs["low_energy_ionisation"] = low_energy_ionisation
         sim.physics_manager.set_microelec_em_physics(TARGET_NAME, **kwargs)
 
         region = sim.physics_manager.regions[f"{TARGET_NAME}_region"]
@@ -109,7 +109,7 @@ def build_sim(physics_list, base_list, thr_keV, use_penelope):
     source.position.translation = [0, 0, -4 * cm]
     source.direction.type = "momentum"
     source.direction.momentum = [0, 0, 1]
-    source.n = 1
+    source.number_of_primaries = 1
 
     sim.add_actor("SimulationStatisticsActor", "stats")
     return sim
@@ -118,10 +118,10 @@ def build_sim(physics_list, base_list, thr_keV, use_penelope):
 if __name__ == "__main__":
     paths = utility.get_default_test_paths(__file__)
 
-    for name, physics_list, base_list, thr_keV, use_penelope in CONFIGS:
+    for name, physics_list, base_list, thr_keV, low_energy_ionisation in CONFIGS:
         dump_file = paths.output / f"microelec_dump_{name}.log"
         print(f"[{name}] -> {dump_file}")
-        sim = build_sim(physics_list, base_list, thr_keV, use_penelope)
+        sim = build_sim(physics_list, base_list, thr_keV, low_energy_ionisation)
         with redirect_all_output_to(dump_file):
             # write a header into the dump file itself
             print("=" * 78)
@@ -132,7 +132,7 @@ if __name__ == "__main__":
                 f"  electron_threshold  = {thr_keV} keV"
                 + ("  (baseline, no MicroElec)" if thr_keV is None else "")
             )
-            print(f"  use_penelope        = {use_penelope}")
+            print(f"  low_e_ionisation    = {low_energy_ionisation}")
             print("=" * 78)
             sys.stdout.flush()
             # fresh process per config: physics list / EM parameters are global.

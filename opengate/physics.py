@@ -430,10 +430,8 @@ class Region(GateObject):
         "G4EmDNAPhysics_option8",
         "MicroElec",
     )
-    # Standard EM base lists a MicroElec region can reproduce above its
-    # per-species thresholds (only relevant when track_structure_em_physics
-    # == "MicroElec").
     available_microelec_base_lists = ("opt3", "opt4")
+    available_microelec_low_energy_ionisation = ("penelope", "none")
 
     user_info_defaults = {}
     user_info_defaults["user_limits"] = (
@@ -490,49 +488,66 @@ class Region(GateObject):
             "`G4EmDNAPhysics_option8`. "
             "GATE maps these values internally to the shorter Geant4 region-activation "
             "identifiers required by `G4EmParameters::AddDNA(...)`. "
-            "The special value `MicroElec` instead overlays Geant4 MicroElec "
-            "track-structure models on a standard EM base list; it is configured "
-            "via the auxiliary `microelec_*` attributes and "
+            "`MicroElec` selects the Geant4 MicroElec models, configured with "
+            "the `microelec_*` attributes or "
             "`PhysicsManager.set_microelec_em_physics(...)`.",
             "allowed_values": available_track_structure_em_physics + (None,),
         },
     )
-    # --- MicroElec auxiliary settings ---------------------------------------
-    # These only take effect when track_structure_em_physics == "MicroElec".
+    # --- MicroElec (track_structure_em_physics == "MicroElec") ---------------
     user_info_defaults["microelec_electron_threshold"] = (
         1.0 * g4_units.keV,
         {
-            "doc": "Electron MicroElec->base-list handoff energy (in Geant4 "
-            "units). Below it, MicroElec elastic/inelastic/phonon models are "
-            "used; above it, the base list. Each MicroElec model is additionally "
-            "capped at its data-validity ceiling (elastic 500 keV, inelastic "
-            "10 keV). Default 1 keV.",
+            "doc": "Energy below which e- use the MicroElec models; above it, "
+            "the base-list models. Capped at the MicroElec data limits "
+            "(elastic 500 keV, inelastic 10 keV).",
         },
     )
     user_info_defaults["microelec_proton_threshold"] = (
         2.0 * g4_units.MeV,
         {
-            "doc": "Proton MicroElec->base-list handoff energy (in Geant4 "
-            "units). Below it, MicroElec inelastic is used; above it, the base "
-            "list (Bragg/BetheBloch). Capped at the 10 MeV MicroElec data "
-            "ceiling.",
+            "doc": "Energy below which protons use the MicroElec model; above "
+            "it, the base-list models (Bragg/BetheBloch). Capped at 10 MeV.",
         },
     )
     user_info_defaults["microelec_base_list"] = (
         "opt4",
         {
-            "doc": "Standard EM base list whose models this MicroElec region "
-            "reproduces above the per-species thresholds. One of 'opt3' or "
-            "'opt4'. It should match the simulation physics_list_name.",
+            "doc": "Standard EM list whose models the region uses above the "
+            "MicroElec thresholds: 'opt3' or 'opt4'. Must match the EM part "
+            "of physics_list_name (G4EmStandardPhysics_option3 / *_EMY or "
+            "G4EmStandardPhysics_option4 / *_EMZ).",
             "allowed_values": available_microelec_base_lists,
         },
     )
-    user_info_defaults["microelec_use_penelope"] = (
+    user_info_defaults["microelec_low_energy_ionisation"] = (
+        None,
+        {
+            "doc": "e- ionisation model between the electron threshold and "
+            "100 keV: 'penelope' or 'none' (MollerBhabha only). None: penelope "
+            "for opt4, none for opt3. opt3 accepts only 'none'.",
+            "allowed_values": available_microelec_low_energy_ionisation + (None,),
+        },
+    )
+    user_info_defaults["microelec_activate_proton_models"] = (
         True,
         {
-            "doc": "opt4 only: whether electron ionisation uses the Penelope "
-            "model below 100 keV (as in em_opt4). Ignored for the opt3 base "
-            "list.",
+            "doc": "Use the MicroElec model for protons. If False, protons keep "
+            "the base-list models in the region.",
+        },
+    )
+    user_info_defaults["microelec_activate_alpha_models"] = (
+        True,
+        {
+            "doc": "Use the MicroElec model for alphas. If False, alphas keep "
+            "the base-list models in the region.",
+        },
+    )
+    user_info_defaults["microelec_activate_ion_models"] = (
+        True,
+        {
+            "doc": "Use the MicroElec model for generic ions. If False, ions "
+            "keep the base-list models in the region.",
         },
     )
 

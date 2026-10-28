@@ -814,18 +814,13 @@ class PhysicsManager(GateObject):
         "microelec_surface_work_functions": (
             Box(),
             {
-                "doc": "MicroElec only: dict of material_name:work_function used by "
-                "G4MicroElecSurface at interfaces, e.g. "
+                "doc": "MicroElec surface work functions of materials without "
+                "MicroElec data, as material_name: work_function, e.g. "
                 "sim.physics_manager.microelec_surface_work_functions['Brass'] = 4.2 * eV. "
-                "Intended for a non-database bulk that touches a MicroElec region "
-                "through a thin database skin (e.g. a G4_Cu skin around a Brass "
-                "core): set the bulk's work function equal to the skin's so the "
-                "interface barrier (the work-function difference) vanishes and the "
-                "metal-metal contact is irrelevant, instead of the bulk being "
-                "treated as vacuum (work function 0) and imposing a spurious "
-                "escape barrier. Materials not listed keep the default behavior "
-                "(database value, or 0 for a vacuum-like surrounder). Only affects "
-                "materials absent from the MicroElec database.",
+                "G4MicroElecSurface uses the work-function difference between the "
+                "two materials at a boundary as the surface barrier. Materials "
+                "without MicroElec data that are not listed get 0 (vacuum) and must "
+                "be vacuum-like. Ignored for materials with MicroElec data.",
             },
         ),
         # "processes_to_bias": (
@@ -1160,13 +1155,8 @@ class PhysicsManager(GateObject):
         region.track_structure_em_physics = track_structure_em_physics
 
     # --- MicroElec ----------------------------------------------------------
-    # MicroElec is selected through the same track_structure_em_physics region
-    # attribute (value "MicroElec"), but carries extra per-region settings
-    # (base list, handoff thresholds, Penelope) that plain DNA does not. These
-    # convenience setters assign the selector and validate the extras.
-    _microelec_electron_threshold_ceiling = (
-        10 * g4_units.keV
-    )  # inelastic-model ceiling (elastic can go higher; capped in C++)
+    # MicroElec inelastic data limits.
+    _microelec_electron_threshold_ceiling = 10 * g4_units.keV
     _microelec_proton_threshold_ceiling = 10 * g4_units.MeV
 
     def _validate_microelec_threshold(self, region, name, value, ceiling):
@@ -1189,7 +1179,10 @@ class PhysicsManager(GateObject):
         electron_threshold=None,
         proton_threshold=None,
         base_list=None,
-        use_penelope=None,
+        low_energy_ionisation=None,
+        activate_proton_models=None,
+        activate_alpha_models=None,
+        activate_ion_models=None,
     ):
         current_value = region.user_info["track_structure_em_physics"]
         if current_value not in (None, "MicroElec"):
@@ -1216,6 +1209,7 @@ class PhysicsManager(GateObject):
             )
             region.user_info["microelec_proton_threshold"] = proton_threshold
         if base_list is not None:
+            base_list = str(base_list).lower()
             allowed_bl = Region.available_microelec_base_lists
             if base_list not in allowed_bl:
                 fatal(
@@ -1223,57 +1217,60 @@ class PhysicsManager(GateObject):
                     f"{region.name}. Allowed values are: {list(allowed_bl)}."
                 )
             region.user_info["microelec_base_list"] = base_list
-        if use_penelope is not None:
-            region.user_info["microelec_use_penelope"] = bool(use_penelope)
+        if low_energy_ionisation is not None:
+            low_energy_ionisation = str(low_energy_ionisation).lower()
+            allowed_lei = Region.available_microelec_low_energy_ionisation
+            if low_energy_ionisation not in allowed_lei:
+                fatal(
+                    f"Illegal MicroElec low_energy_ionisation "
+                    f"'{low_energy_ionisation}' for region {region.name}. "
+                    f"Allowed values are: {list(allowed_lei)}."
+                )
+            region.user_info["microelec_low_energy_ionisation"] = low_energy_ionisation
+        for key, value in (
+            ("microelec_activate_proton_models", activate_proton_models),
+            ("microelec_activate_alpha_models", activate_alpha_models),
+            ("microelec_activate_ion_models", activate_ion_models),
+        ):
+            if value is not None:
+                region.user_info[key] = bool(value)
 
-    def set_microelec_em_physics(
-        self,
-        volume_name,
-        electron_threshold=None,
-        proton_threshold=None,
-        base_list=None,
-        use_penelope=None,
-    ):
+    def set_microelec_em_physics(self, volume_name, **kwargs):
+        """Use MicroElec track-structure EM physics in the region of a volume.
+
+        Keyword arguments (all optional; unset ones keep the region values):
+
+        - ``electron_threshold``: energy below which e- use MicroElec (default
+          1 keV, capped at 10 keV).
+        - ``proton_threshold``: energy below which protons use MicroElec
+          (default 2 MeV, capped at 10 MeV).
+        - ``base_list``: 'opt3' or 'opt4' (default). Must match the EM part of
+          ``physics_list_name``.
+        - ``low_energy_ionisation``: 'penelope' or 'none' (default: follow the
+          base list).
+        - ``activate_proton_models``, ``activate_alpha_models``,
+          ``activate_ion_models``: per-species MicroElec switches (default True).
+        """
         volume_name = self._normalize_volume_name(volume_name)
         region = self.find_or_create_region(volume_name)
-        self._set_region_microelec_em_physics(
-            region,
-            electron_threshold,
-            proton_threshold,
-            base_list,
-            use_penelope,
-        )
+        self._set_region_microelec_em_physics(region, **kwargs)
 
-    def set_microelec_em_physics_in_region(
-        self,
-        region_name,
-        electron_threshold=None,
-        proton_threshold=None,
-        base_list=None,
-        use_penelope=None,
-    ):
+    def set_microelec_em_physics_in_region(self, region_name, **kwargs):
+        """Same as :meth:`set_microelec_em_physics`, for an existing region."""
         try:
             region = self.regions[region_name]
         except KeyError:
             fatal(
                 f"Cannot set MicroElec EM physics: region '{region_name}' does not exist."
             )
-        self._set_region_microelec_em_physics(
-            region,
-            electron_threshold,
-            proton_threshold,
-            base_list,
-            use_penelope,
-        )
+        self._set_region_microelec_em_physics(region, **kwargs)
 
     def set_microelec_surface_work_function(self, material_name, work_function):
-        """Override the MicroElec surface work function of a bulk material.
+        """Set the MicroElec surface work function of a material without
+        MicroElec data (see ``microelec_surface_work_functions``).
 
-        See the ``microelec_surface_work_functions`` user info for the rationale.
-        ``material_name`` must match the runtime Geant4 material name exactly
-        (NIST materials keep their ``G4_`` prefix, e.g. ``G4_Cu``). Set
-        ``work_function`` to the touching skin material's work function so the
-        interface barrier vanishes.
+        ``material_name`` is the Geant4 material name, including any ``G4_``
+        prefix.
         """
         if not isinstance(work_function, (int, float)) or work_function < 0:
             fatal(

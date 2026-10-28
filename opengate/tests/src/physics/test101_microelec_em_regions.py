@@ -21,11 +21,11 @@ def microelec_hook(simulation_engine):
             "e-_G4MicroElecElastic",
             1000.0 * eV,
         )
-    simulation_engine.user_hook_log.append(results)
+    simulation_engine.user_hook_log["models"] = results
 
 
 def check_microelec_models(sim):
-    model_checks = sim.user_hook_log[0]
+    model_checks = sim.user_hook_log["models"]
     target_model = model_checks.get(TARGET_NAME)
     world_model = model_checks.get("world")
 
@@ -106,7 +106,7 @@ if __name__ == "__main__":
     source.position.translation = [0, 0, -4 * cm]
     source.direction.type = "momentum"
     source.direction.momentum = [0, 0, 1]
-    source.n = 1
+    source.number_of_primaries = 1
 
     sim.add_actor("SimulationStatisticsActor", "stats")
     sim.user_hook_after_run = microelec_hook
