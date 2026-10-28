@@ -163,6 +163,43 @@ def run_reference_list_all_off():
     return check(sim, probes, "QGSP_BIC_EMZ all off")
 
 
+def em_parameters_hook(simulation_engine):
+    p = g4.G4EmParameters.Instance()
+    simulation_engine.user_hook_log["em_parameters"] = {
+        "fluo": p.Fluo(),
+        "pixe": p.Pixe(),
+        "min_kin_energy": p.MinKinEnergy(),
+        "lowest_electron_energy": p.LowestElectronEnergy(),
+    }
+
+
+def run_em_parameters():
+    """physics_manager.em_parameters take precedence over the MicroElec
+    defaults; unset parameters keep the MicroElec values."""
+    sim = build_sim("G4EmStandardPhysics_option4")
+    add_target(sim, "target", "G4_Al", 0)
+    sim.physics_manager.set_microelec_em_physics("target")
+    sim.physics_manager.em_parameters.pixe = False
+    sim.user_hook_after_init = em_parameters_hook
+    sim.run(start_new_process=True)
+
+    eV = gate.g4_units.eV
+    params = sim.user_hook_log["em_parameters"]
+    expected = {
+        "fluo": True,
+        "pixe": False,
+        "min_kin_energy": 0.1 * eV,
+        "lowest_electron_energy": 0.0,
+    }
+    is_ok = True
+    for key, want in expected.items():
+        passed = params[key] == want
+        status = "PASS" if passed else "FAIL"
+        print(f"  [{status}] [em_parameters] {key} = {params[key]} (expected: {want})")
+        is_ok = is_ok and passed
+    return is_ok
+
+
 def run_opt3_inconsistent():
     """opt3 with low_energy_ionisation='penelope' is fatal."""
     sim = build_sim("G4EmStandardPhysics_option3")
@@ -184,5 +221,6 @@ def run_opt3_inconsistent():
 if __name__ == "__main__":
     ok = run_two_regions()
     ok = run_reference_list_all_off() and ok
+    ok = run_em_parameters() and ok
     ok = run_opt3_inconsistent() and ok
     utility.test_ok(ok)
