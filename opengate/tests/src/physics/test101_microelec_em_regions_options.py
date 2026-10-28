@@ -98,13 +98,13 @@ def check(sim, probes, label):
 
 
 def run_two_regions():
-    """opt4 base list, one region with everything on, one with all off."""
+    """opt4 base list, one region with everything on, one with all off (set
+    through the volume)."""
     sim = build_sim("G4EmStandardPhysics_option4")
     add_target(sim, "on", "G4_Al", -10)
-    add_target(sim, "off", "G4_Si", 10)
+    off = add_target(sim, "off", "G4_Si", 10)
     sim.physics_manager.set_microelec_em_physics("on", base_list="opt4")
-    sim.physics_manager.set_microelec_em_physics(
-        "off",
+    off.set_microelec_em_physics(
         base_list="opt4",
         low_energy_ionisation="none",
         activate_proton_models=False,

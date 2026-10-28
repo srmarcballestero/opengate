@@ -581,6 +581,13 @@ class VolumeBase(DynamicGateObject, NodeMixin):
             self.name, track_structure_em_physics
         )
 
+    @requires_fatal("volume_manager")
+    def set_microelec_em_physics(self, **kwargs):
+        """See :meth:`PhysicsManager.set_microelec_em_physics`."""
+        self.volume_manager.simulation.physics_manager.set_microelec_em_physics(
+            self.name, **kwargs
+        )
+
 
 class RepeatableVolume(VolumeBase):
     def get_repetition_name_from_index(self, index):
