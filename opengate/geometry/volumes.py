@@ -582,10 +582,27 @@ class VolumeBase(DynamicGateObject, NodeMixin):
         )
 
     @requires_fatal("volume_manager")
-    def set_microelec_em_physics(self, **kwargs):
+    def set_microelec_em_physics(
+        self,
+        *,
+        electron_threshold=None,
+        proton_threshold=None,
+        base_list=None,
+        low_energy_ionisation=None,
+        activate_proton_models=None,
+        activate_alpha_models=None,
+        activate_ion_models=None,
+    ):
         """See :meth:`PhysicsManager.set_microelec_em_physics`."""
         self.volume_manager.simulation.physics_manager.set_microelec_em_physics(
-            self.name, **kwargs
+            self.name,
+            electron_threshold=electron_threshold,
+            proton_threshold=proton_threshold,
+            base_list=base_list,
+            low_energy_ionisation=low_energy_ionisation,
+            activate_proton_models=activate_proton_models,
+            activate_alpha_models=activate_alpha_models,
+            activate_ion_models=activate_ion_models,
         )
 
 

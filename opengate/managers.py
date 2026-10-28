@@ -1179,10 +1179,21 @@ class PhysicsManager(GateObject):
             if value is not None:
                 setattr(region, attribute, value)
 
-    def set_microelec_em_physics(self, volume_name, **kwargs):
+    def set_microelec_em_physics(
+        self,
+        volume_name,
+        *,
+        electron_threshold=None,
+        proton_threshold=None,
+        base_list=None,
+        low_energy_ionisation=None,
+        activate_proton_models=None,
+        activate_alpha_models=None,
+        activate_ion_models=None,
+    ):
         """Use MicroElec track-structure EM physics in the region of a volume.
 
-        Keyword arguments (all optional; unset ones keep the region values):
+        Arguments left to None keep the region values:
 
         - ``electron_threshold``: energy below which e- use MicroElec (default
           1 keV, capped at 10 keV).
@@ -1197,9 +1208,29 @@ class PhysicsManager(GateObject):
         """
         volume_name = self._normalize_volume_name(volume_name)
         region = self.find_or_create_region(volume_name)
-        self._set_region_microelec_em_physics(region, **kwargs)
+        self._set_region_microelec_em_physics(
+            region,
+            electron_threshold=electron_threshold,
+            proton_threshold=proton_threshold,
+            base_list=base_list,
+            low_energy_ionisation=low_energy_ionisation,
+            activate_proton_models=activate_proton_models,
+            activate_alpha_models=activate_alpha_models,
+            activate_ion_models=activate_ion_models,
+        )
 
-    def set_microelec_em_physics_in_region(self, region_name, **kwargs):
+    def set_microelec_em_physics_in_region(
+        self,
+        region_name,
+        *,
+        electron_threshold=None,
+        proton_threshold=None,
+        base_list=None,
+        low_energy_ionisation=None,
+        activate_proton_models=None,
+        activate_alpha_models=None,
+        activate_ion_models=None,
+    ):
         """Same as :meth:`set_microelec_em_physics`, for an existing region."""
         try:
             region = self.regions[region_name]
@@ -1207,7 +1238,16 @@ class PhysicsManager(GateObject):
             fatal(
                 f"Cannot set MicroElec EM physics: region '{region_name}' does not exist."
             )
-        self._set_region_microelec_em_physics(region, **kwargs)
+        self._set_region_microelec_em_physics(
+            region,
+            electron_threshold=electron_threshold,
+            proton_threshold=proton_threshold,
+            base_list=base_list,
+            low_energy_ionisation=low_energy_ionisation,
+            activate_proton_models=activate_proton_models,
+            activate_alpha_models=activate_alpha_models,
+            activate_ion_models=activate_ion_models,
+        )
 
     def set_microelec_surface_work_function(self, material_name, work_function):
         """Set the MicroElec surface work function of a material without
