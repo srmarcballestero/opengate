@@ -1184,13 +1184,6 @@ class PhysicsManager(GateObject):
         activate_alpha_models=None,
         activate_ion_models=None,
     ):
-        current_value = region.user_info["track_structure_em_physics"]
-        if current_value not in (None, "MicroElec"):
-            fatal(
-                f"Region {region.name} already uses track-structure EM physics "
-                f"'{current_value}'. Cannot also assign 'MicroElec'. Only one "
-                f"track-structure EM physics is allowed per region."
-            )
         region.track_structure_em_physics = "MicroElec"
         if electron_threshold is not None:
             self._validate_microelec_threshold(

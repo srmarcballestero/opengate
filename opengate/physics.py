@@ -418,6 +418,22 @@ class PhysicsListBuilder(GateObject):
         return s
 
 
+def _setter_hook_track_structure_em_physics(self, track_structure_em_physics):
+    current = self.user_info["track_structure_em_physics"]
+    if (
+        current is not None
+        and track_structure_em_physics is not None
+        and (current == "MicroElec") != (track_structure_em_physics == "MicroElec")
+    ):
+        fatal(
+            f"Region '{self.name}' uses track-structure EM physics '{current}' and "
+            f"cannot be switched to '{track_structure_em_physics}': DNA and "
+            f"MicroElec cannot be combined in a region. Set "
+            f"track_structure_em_physics to None first to replace it."
+        )
+    return track_structure_em_physics
+
+
 class Region(GateObject):
     """FIXME: Documentation of the Region class."""
 
@@ -490,8 +506,11 @@ class Region(GateObject):
             "identifiers required by `G4EmParameters::AddDNA(...)`. "
             "`MicroElec` selects the Geant4 MicroElec models, configured with "
             "the `microelec_*` attributes or "
-            "`PhysicsManager.set_microelec_em_physics(...)`.",
+            "`PhysicsManager.set_microelec_em_physics(...)`. "
+            "A DNA region cannot be switched to MicroElec or vice versa without "
+            "resetting it to None first.",
             "allowed_values": available_track_structure_em_physics + (None,),
+            "setter_hook": _setter_hook_track_structure_em_physics,
         },
     )
     # --- MicroElec (track_structure_em_physics == "MicroElec") ---------------
