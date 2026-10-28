@@ -141,13 +141,13 @@ class ActorBase(GateObject):
         "track_structure_em_physics": (
             None,
             {
-                "doc": "If not None, request region-based track-structure EM physics "
-                "in the volume to which this actor is attached. "
+                "doc": "If not None, request region-based DNA track-structure EM "
+                "physics in the volume to which this actor is attached. "
                 "Use the full Geant4 constructor names where they exist, such as "
                 "`G4EmDNAPhysics_option2`, `G4EmDNAPhysics_option4`, "
                 "`G4EmDNAPhysics_option6`, `G4EmDNAPhysics_option7`, or "
                 "`G4EmDNAPhysics_option8`.",
-                "allowed_values": Region.available_track_structure_em_physics + (None,),
+                "allowed_values": Region.available_dna_em_physics + (None,),
             },
         ),
     }

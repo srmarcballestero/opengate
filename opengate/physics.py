@@ -437,15 +437,15 @@ def _setter_hook_track_structure_em_physics(self, track_structure_em_physics):
 class Region(GateObject):
     """FIXME: Documentation of the Region class."""
 
-    available_track_structure_em_physics = (
+    available_dna_em_physics = (
         "G4EmDNAPhysics",
         "G4EmDNAPhysics_option2",
         "G4EmDNAPhysics_option4",
         "G4EmDNAPhysics_option6",
         "G4EmDNAPhysics_option7",
         "G4EmDNAPhysics_option8",
-        "MicroElec",
     )
+    available_track_structure_em_physics = available_dna_em_physics + ("MicroElec",)
     available_microelec_base_lists = ("opt3", "opt4")
     available_microelec_low_energy_ionisation = ("penelope", "none")
 
