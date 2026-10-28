@@ -253,6 +253,22 @@ def run_switching():
     return ok
 
 
+def run_actor_request():
+    """Actors can request DNA track-structure physics, not MicroElec."""
+    sim = build_sim("G4EmStandardPhysics_option4")
+    add_target(sim, "target", "G4_Al", 0)
+    actor = sim.add_actor("SimulationStatisticsActor", "requesting_actor")
+    actor.attached_to = "target"
+    try:
+        actor.track_structure_em_physics = "MicroElec"
+    except Exception as e:  # GATE's fatal() raises a plain Exception
+        passed = "illegal value" in str(e)
+    else:
+        passed = False
+    print(f"  [{'PASS' if passed else 'FAIL'}] [actor request] MicroElec rejected")
+    return passed
+
+
 def run_opt3_inconsistent():
     """opt3 with low_energy_ionisation='penelope' is fatal."""
     sim = build_sim("G4EmStandardPhysics_option3")
@@ -276,5 +292,6 @@ if __name__ == "__main__":
     ok = run_reference_list_all_off() and ok
     ok = run_em_parameters() and ok
     ok = run_switching() and ok
+    ok = run_actor_request() and ok
     ok = run_opt3_inconsistent() and ok
     utility.test_ok(ok)
