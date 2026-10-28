@@ -269,6 +269,34 @@ def run_actor_request():
     return passed
 
 
+def run_direct_assignment():
+    """Region attributes set directly are normalised and validated like those
+    set through set_microelec_em_physics."""
+    keV = gate.g4_units.keV
+    sim = build_sim("G4EmStandardPhysics_option4")
+    add_target(sim, "target", "G4_Al", 0)
+    sim.physics_manager.set_microelec_em_physics("target")
+    region = sim.physics_manager.regions["target_region"]
+    region.microelec_base_list = "OPT4"
+    ok = region.microelec_base_list == "opt4"
+    print(
+        f"  [{'PASS' if ok else 'FAIL'}] [direct assignment] base list "
+        f"normalised to {region.microelec_base_list!r}"
+    )
+    region.microelec_electron_threshold = -1 * keV
+    try:
+        sim.resolve_and_validate_config()
+    except Exception as e:  # GATE's fatal() raises a plain Exception
+        passed = "must be a positive energy" in str(e)
+    else:
+        passed = False
+    print(
+        f"  [{'PASS' if passed else 'FAIL'}] [direct assignment] negative "
+        f"threshold rejected"
+    )
+    return ok and passed
+
+
 def run_opt3_inconsistent():
     """opt3 with low_energy_ionisation='penelope' is fatal."""
     sim = build_sim("G4EmStandardPhysics_option3")
@@ -293,5 +321,6 @@ if __name__ == "__main__":
     ok = run_em_parameters() and ok
     ok = run_switching() and ok
     ok = run_actor_request() and ok
+    ok = run_direct_assignment() and ok
     ok = run_opt3_inconsistent() and ok
     utility.test_ok(ok)
